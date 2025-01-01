@@ -1441,7 +1441,8 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     pub fn parse<O, P: Parser<'src, I, O, E>>(&mut self, parser: P) -> Result<O, E::Error> {
         match parser.go::<Emit>(self) {
             Ok(out) => Ok(out),
-            Err(()) => Err(self.take_alt().err),
+            // Can't fail!
+            Err(()) => Err(self.take_alt().unwrap().err),
         }
     }
 
@@ -1453,7 +1454,8 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     pub fn check<O, P: Parser<'src, I, O, E>>(&mut self, parser: P) -> Result<(), E::Error> {
         match parser.go::<Check>(self) {
             Ok(()) => Ok(()),
-            Err(()) => Err(self.take_alt().err),
+            // Can't fail!
+            Err(()) => Err(self.take_alt().unwrap().err),
         }
     }
 
@@ -1646,14 +1648,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
 
         // Prioritize errors before choosing whether to generate the alt (avoids unnecessary error creation)
         self.errors.alt = Some(match self.errors.alt.take() {
-            Some(alt) => match {
-                println!(
-                    "Add alt alt = {}, at = {}",
-                    I::cursor_location(&alt.pos),
-                    I::cursor_location(at)
-                );
-                I::cursor_location(&alt.pos).cmp(&I::cursor_location(at))
-            } {
+            Some(alt) => match { I::cursor_location(&alt.pos).cmp(&I::cursor_location(at)) } {
                 Ordering::Equal => {
                     Located::at(alt.pos, alt.err.merge_expected_found(expected, found, span))
                 }
@@ -1684,15 +1679,9 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
         });
     }
 
-    // Take the alt error. If one doesn't exist, generate a fake one.
-    pub(crate) fn take_alt(&mut self) -> Located<I::Cursor, E::Error> {
-        let fake_span = self.span_since(&self.cursor());
-        self.errors.alt.take().unwrap_or_else(|| {
-            Located::at(
-                self.cursor.clone(),
-                E::Error::expected_found([], None, fake_span),
-            )
-        })
+    // Take the alt error, if one exists
+    pub(crate) fn take_alt(&mut self) -> Option<Located<I::Cursor, E::Error>> {
+        self.errors.alt.take()
     }
 }
 
