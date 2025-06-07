@@ -37,7 +37,7 @@ pub trait Strategy<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Def
     // Attempt to recover from a parsing failure.
     // The strategy should properly handle the alt error but is not required to handle rewinding.
     #[doc(hidden)]
-    fn recover<M: Mode, P: Parser<'src, I, O, E>>(
+    fn recover<M: Mode, P: Parser<'src, I, E, Output = O>>(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         parser: &P,
@@ -57,10 +57,10 @@ impl<A> Sealed for ViaParser<A> {}
 impl<'src, I, O, E, A> Strategy<'src, I, O, E> for ViaParser<A>
 where
     I: Input<'src>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E, Output = O>,
     E: ParserExtra<'src, I>,
 {
-    fn recover<M: Mode, P: Parser<'src, I, O, E>>(
+    fn recover<M: Mode, P: Parser<'src, I, E, Output = O>>(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         _parser: &P,
@@ -85,14 +85,16 @@ pub struct RecoverWith<A, S> {
     pub(crate) strategy: S,
 }
 
-impl<'src, I, O, E, A, S> Parser<'src, I, O, E> for RecoverWith<A, S>
+impl<'src, I, E, A, S> Parser<'src, I, E> for RecoverWith<A, S>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
-    S: Strategy<'src, I, O, E>,
+    A: Parser<'src, I, E>,
+    S: Strategy<'src, I, A::Output, E>,
 {
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    type Output = A::Output;
+
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.save();
         match self.parser.go::<M>(inp) {
             Ok(out) => Ok(out),
@@ -110,7 +112,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`skip_then_retry_until`].
@@ -125,11 +127,11 @@ impl<S, U> Sealed for SkipThenRetryUntil<S, U> {}
 impl<'src, I, O, E, S, U> Strategy<'src, I, O, E> for SkipThenRetryUntil<S, U>
 where
     I: Input<'src>,
-    S: Parser<'src, I, (), E>,
-    U: Parser<'src, I, (), E>,
+    S: Parser<'src, I, E, Output = ()>,
+    U: Parser<'src, I, E, Output = ()>,
     E: ParserExtra<'src, I>,
 {
-    fn recover<M: Mode, P: Parser<'src, I, O, E>>(
+    fn recover<M: Mode, P: Parser<'src, I, E, Output = O>>(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         parser: &P,
@@ -184,12 +186,12 @@ impl<S, U, F> Sealed for SkipUntil<S, U, F> {}
 impl<'src, I, O, E, S, U, F> Strategy<'src, I, O, E> for SkipUntil<S, U, F>
 where
     I: Input<'src>,
-    S: Parser<'src, I, (), E>,
-    U: Parser<'src, I, (), E>,
+    S: Parser<'src, I, E, Output = ()>,
+    U: Parser<'src, I, E, Output = ()>,
     F: Fn() -> O,
     E: ParserExtra<'src, I>,
 {
-    fn recover<M: Mode, P: Parser<'src, I, O, E>>(
+    fn recover<M: Mode, P: Parser<'src, I, E, Output = O>>(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         _parser: &P,
@@ -236,7 +238,7 @@ pub fn nested_delimiters<'src, I, O, E, F, const N: usize>(
     end: I::Token,
     others: [(I::Token, I::Token); N],
     fallback: F,
-) -> impl Parser<'src, I, O, E> + Clone
+) -> impl Parser<'src, I, E, Output = O> + Clone
 where
     I: ValueInput<'src>,
     I::Token: PartialEq + Clone,

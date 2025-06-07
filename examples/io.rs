@@ -8,7 +8,7 @@ struct Foo {
     val: u32,
 }
 
-fn ident<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, String, E> {
+fn ident<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, E, Output = String> {
     any()
         .filter(u8::is_ascii_alphabetic)
         .repeated()
@@ -17,7 +17,7 @@ fn ident<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<Fil
         .map(|v| String::from_utf8_lossy(&v).to_string())
 }
 
-fn digits<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, String, E> {
+fn digits<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, E, Output = String> {
     any()
         .filter(u8::is_ascii_digit)
         .repeated()
@@ -26,7 +26,7 @@ fn digits<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<Fi
         .map(|v| String::from_utf8_lossy(&v).to_string())
 }
 
-fn parser<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, Vec<Foo>, E>
+fn parser<'a, E: ParserExtra<'a, IoInput<File>>>() -> impl Parser<'a, IoInput<File>, E, Output = Vec<Foo>>
 where
     E::Error: LabelError<'a, IoInput<File>, MaybeRef<'a, u8>>,
 {

@@ -30,7 +30,7 @@ enum Expr<'src> {
 }
 
 #[allow(clippy::let_and_return)]
-fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
+fn parser<'src>() -> impl Parser<'src, &'src str, Output = Expr<'src>> {
     let ident = text::ascii::ident().padded();
 
     let expr = recursive(|expr| {
@@ -50,7 +50,7 @@ fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
             .or(expr.delimited_by(just('('), just(')')))
             .or(call)
             .or(ident.map(Expr::Var))
-            .padded();
+            .padded().boxed();
 
         let op = |c| just(c).padded();
 
@@ -92,7 +92,7 @@ fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
                 name,
                 rhs: Box::new(rhs),
                 then: Box::new(then),
-            });
+            }).boxed();
 
         let r#fn = text::ascii::keyword("fn")
             .ignore_then(ident)
@@ -106,7 +106,7 @@ fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
                 args,
                 body: Box::new(body),
                 then: Box::new(then),
-            });
+            }).boxed();
 
         r#let.or(r#fn).or(expr).padded()
     });

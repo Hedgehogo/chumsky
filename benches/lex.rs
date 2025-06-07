@@ -125,7 +125,7 @@ mod chumsky_zero_copy {
     use super::Token;
     use std::str;
 
-    pub fn parser<'a>() -> impl Parser<'a, &'a [u8], Vec<Token<'a>>> {
+    pub fn parser<'a>() -> impl Parser<'a, &'a [u8], Output = Vec<Token<'a>>> {
         let digits = one_of(b'0'..=b'9').repeated().to_slice();
 
         let int = one_of(b'1'..=b'9')
@@ -134,7 +134,7 @@ mod chumsky_zero_copy {
             .then(one_of(b'0'..=b'9').repeated())
             .ignored()
             .or(just(b'0').ignored())
-            .ignored();
+            .ignored().boxed();
 
         let frac = just(b'.').then(digits.clone());
 
@@ -150,7 +150,7 @@ mod chumsky_zero_copy {
             .then(exp.or_not())
             .to_slice()
             .map(|bytes| str::from_utf8(bytes).unwrap().parse().unwrap())
-            .boxed();
+            .boxed().boxed();
 
         let escape = just(b'\\')
             .then(choice((
@@ -164,7 +164,7 @@ mod chumsky_zero_copy {
                 just(b't').to(b'\t'),
             )))
             .ignored()
-            .boxed();
+            .boxed().boxed();
 
         let string = none_of(b"\\\"")
             .ignored()
@@ -190,7 +190,7 @@ mod chumsky_zero_copy {
             just(b"(").to(Token::OpenParen),
             just(b")").to(Token::CloseParen),
             just(b",").to(Token::Comma),
-        ))
+        )).boxed()
         .padded()
         .repeated()
         .collect()

@@ -20,15 +20,17 @@ pub struct Configure<A, F> {
     pub(crate) cfg: F,
 }
 
-impl<'src, I, O, E, A, F> Parser<'src, I, O, E> for Configure<A, F>
+impl<'src, I, E, A, F> Parser<'src, I, E> for Configure<A, F>
 where
-    A: ConfigParser<'src, I, O, E>,
+    A: ConfigParser<'src, I, E>,
     F: Fn(A::Config, &E::Context) -> A::Config,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -36,7 +38,7 @@ where
         self.parser.go_cfg::<M>(inp, cfg)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`ConfigIterParser::configure`]
@@ -58,13 +60,15 @@ impl<A: Clone, F: Clone, OA> Clone for IterConfigure<A, F, OA> {
     }
 }
 
-impl<'src, I, OA, E, A, F> Parser<'src, I, (), E> for IterConfigure<A, F, OA>
+impl<'src, I, E, A, F> Parser<'src, I, E> for IterConfigure<A, F, A::Item>
 where
-    A: ConfigIterParser<'src, I, OA, E>,
+    A: ConfigIterParser<'src, I, E>,
     F: Fn(A::Config, &E::Context) -> A::Config,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         let mut state = self.make_iter::<Check>(inp)?;
@@ -77,16 +81,17 @@ where
         }
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, A, F> IterParser<'src, I, O, E> for IterConfigure<A, F, O>
+impl<'src, I, E, A, F> IterParser<'src, I, E> for IterConfigure<A, F, A::Item>
 where
-    A: ConfigIterParser<'src, I, O, E>,
+    A: ConfigIterParser<'src, I, E>,
     F: Fn(A::Config, &E::Context) -> A::Config,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Item = A::Item;
     type IterState<M: Mode>
         = (A::IterState<M>, A::Config)
     where
@@ -110,7 +115,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         self.parser.next_cfg(inp, &mut state.0, &state.1)
     }
 }
@@ -134,13 +139,15 @@ impl<A: Clone, F: Clone, O> Clone for TryIterConfigure<A, F, O> {
     }
 }
 
-impl<'src, I, OA, E, A, F> Parser<'src, I, (), E> for TryIterConfigure<A, F, OA>
+impl<'src, I, E, A, F> Parser<'src, I, E> for TryIterConfigure<A, F, A::Item>
 where
-    A: ConfigIterParser<'src, I, OA, E>,
+    A: ConfigIterParser<'src, I, E>,
     F: Fn(A::Config, &E::Context, I::Span) -> Result<A::Config, E::Error>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         let mut state = self.make_iter::<Check>(inp)?;
@@ -153,16 +160,18 @@ where
         }
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, A, F> IterParser<'src, I, O, E> for TryIterConfigure<A, F, O>
+impl<'src, I, O, E, A, F> IterParser<'src, I, E> for TryIterConfigure<A, F, O>
 where
-    A: ConfigIterParser<'src, I, O, E>,
+    A: ConfigIterParser<'src, I, E>,
     F: Fn(A::Config, &E::Context, I::Span) -> Result<A::Config, E::Error>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Item = A::Item;
+
     type IterState<M: Mode>
         = (A::IterState<M>, A::Config)
     where
@@ -185,7 +194,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         self.parser.next_cfg(inp, &mut state.0, &state.1)
     }
 }
@@ -207,12 +216,14 @@ impl<A: Clone, O> Clone for ToSlice<A, O> {
     }
 }
 
-impl<'src, A, I, O, E> Parser<'src, I, I::Slice, E> for ToSlice<A, O>
+impl<'src, A, I, E> Parser<'src, I, E> for ToSlice<A, A::Output>
 where
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
     I: SliceInput<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = I::Slice;
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, I::Slice>
     where
@@ -224,7 +235,7 @@ where
         Ok(M::bind(|| inp.slice_since(&before..)))
     }
 
-    go_extra!(I::Slice);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::filter`].
@@ -243,15 +254,17 @@ impl<A: Clone, F: Clone> Clone for Filter<A, F> {
     }
 }
 
-impl<'src, A, I, O, E, F> Parser<'src, I, O, E> for Filter<A, F>
+impl<'src, A, I, E, F> Parser<'src, I, E> for Filter<A, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
-    F: Fn(&O) -> bool,
+    A: Parser<'src, I, E>,
+    F: Fn(&A::Output) -> bool,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         self.parser.go::<Emit>(inp).and_then(|out| {
             if (self.filter)(&out) {
@@ -264,19 +277,19 @@ where
         })
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::map`].
-pub struct Map<A, OA, F> {
+pub struct Map<A, OA, O, F> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
     #[allow(dead_code)]
-    pub(crate) phantom: EmptyPhantom<OA>,
+    pub(crate) phantom: EmptyPhantom<(OA, O)>,
 }
 
-impl<A: Copy, OA, F: Copy> Copy for Map<A, OA, F> {}
-impl<A: Clone, OA, F: Clone> Clone for Map<A, OA, F> {
+impl<A: Copy, OA, O, F: Copy> Copy for Map<A, OA, O, F> {}
+impl<A: Clone, OA, O, F: Clone> Clone for Map<A, OA, O, F> {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
@@ -286,29 +299,32 @@ impl<A: Clone, OA, F: Clone> Clone for Map<A, OA, F> {
     }
 }
 
-impl<'src, I, O, E, A, OA, F> Parser<'src, I, O, E> for Map<A, OA, F>
+impl<'src, I, E, A, O, F> Parser<'src, I, E> for Map<A, A::Output, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn(OA) -> O,
+    A: Parser<'src, I, E>,
+    F: Fn(A::Output) -> O,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let out = self.parser.go::<M>(inp)?;
         Ok(M::map(out, &self.mapper))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, A, OA, F> IterParser<'src, I, O, E> for Map<A, OA, F>
+impl<'src, I, E, A, O, F> IterParser<'src, I, E> for Map<A, A::Item, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, OA, E>,
-    F: Fn(OA) -> O,
+    A: IterParser<'src, I, E>,
+    F: Fn(A::Item) -> O,
 {
+    type Item = O;
     type IterState<M: Mode>
         = A::IterState<M>
     where
@@ -339,15 +355,15 @@ where
 }
 
 /// See [`Parser::map_with`].
-pub struct MapWith<A, OA, F> {
+pub struct MapWith<A, OA, O, F> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
     #[allow(dead_code)]
-    pub(crate) phantom: EmptyPhantom<OA>,
+    pub(crate) phantom: EmptyPhantom<(OA, O)>,
 }
 
-impl<A: Copy, OA, F: Copy> Copy for MapWith<A, OA, F> {}
-impl<A: Clone, OA, F: Clone> Clone for MapWith<A, OA, F> {
+impl<A: Copy, OA, O, F: Copy> Copy for MapWith<A, OA, O, F> {}
+impl<A: Clone, OA, O, F: Clone> Clone for MapWith<A, OA, O, F> {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
@@ -357,15 +373,17 @@ impl<A: Clone, OA, F: Clone> Clone for MapWith<A, OA, F> {
     }
 }
 
-impl<'src, I, O, E, A, OA, F> Parser<'src, I, O, E> for MapWith<A, OA, F>
+impl<'src, I, E, A, O, F> Parser<'src, I, E> for MapWith<A, A::Output, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn(OA, &mut MapExtra<'src, '_, I, E>) -> O,
+    A: Parser<'src, I, E>,
+    F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>) -> O,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         let out = self.parser.go::<M>(inp)?;
         Ok(M::map(out, |out| {
@@ -373,16 +391,17 @@ where
         }))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, A, OA, F> IterParser<'src, I, O, E> for MapWith<A, OA, F>
+impl<'src, I, E, A, O, F> IterParser<'src, I, E> for MapWith<A, A::Item, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, OA, E>,
-    F: Fn(OA, &mut MapExtra<'src, '_, I, E>) -> O,
+    A: IterParser<'src, I, E>,
+    F: Fn(A::Item, &mut MapExtra<'src, '_, I, E>) -> O,
 {
+    type Item = O;
     type IterState<M: Mode>
         = A::IterState<M>
     where
@@ -417,17 +436,17 @@ where
 
 /// See [`Parser::map_group`].
 #[cfg(feature = "nightly")]
-pub struct MapGroup<A, OA, F> {
+pub struct MapGroup<A, OA, O, F> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
     #[allow(dead_code)]
-    pub(crate) phantom: EmptyPhantom<OA>,
+    pub(crate) phantom: EmptyPhantom<(OA, O)>,
 }
 
 #[cfg(feature = "nightly")]
-impl<A: Copy, OA, F: Copy> Copy for MapGroup<A, OA, F> {}
+impl<A: Copy, OA, O, F: Copy> Copy for MapGroup<A, OA, O, F> {}
 #[cfg(feature = "nightly")]
-impl<A: Clone, OA, F: Clone> Clone for MapGroup<A, OA, F> {
+impl<A: Clone, OA, O, F: Clone> Clone for MapGroup<A, OA, O, F> {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
@@ -438,32 +457,36 @@ impl<A: Clone, OA, F: Clone> Clone for MapGroup<A, OA, F> {
 }
 
 #[cfg(feature = "nightly")]
-impl<'src, I, O, E, A, OA, F> Parser<'src, I, O, E> for MapGroup<A, OA, F>
+impl<'src, I, E, A, O, F> Parser<'src, I, E> for MapGroup<A, A::Output, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn<OA, Output = O>,
-    OA: Tuple,
+    A: Parser<'src, I, E>,
+    F: Fn<A::Output, Output = O>,
+    A::Output: Tuple,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let out = self.parser.go::<M>(inp)?;
         Ok(M::map(out, |out| self.mapper.call(out)))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 #[cfg(feature = "nightly")]
-impl<'src, I, O, E, A, OA, F> IterParser<'src, I, O, E> for MapGroup<A, OA, F>
+impl<'src, I, E, A, O, F> IterParser<'src, I, E> for MapGroup<A, A::Item, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, OA, E>,
-    F: Fn<OA, Output = O>,
-    OA: Tuple,
+    A: IterParser<'src, I, E>,
+    F: Fn<A::Item, Output = O>,
+    A::Item: Tuple,
 {
+    type Item = O;
+
     type IterState<M: Mode>
         = A::IterState<M>
     where
@@ -510,12 +533,14 @@ impl<A: Clone, OA> Clone for ToSpan<A, OA> {
     }
 }
 
-impl<'src, I, OA, E, A> Parser<'src, I, I::Span, E> for ToSpan<A, OA>
+impl<'src, I, E, A> Parser<'src, I, E> for ToSpan<A, A::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = I::Span;
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, I::Span> {
         let before = inp.cursor();
@@ -523,7 +548,7 @@ where
         Ok(M::bind(|| inp.span_since(&before)))
     }
 
-    go_extra!(I::Span);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::try_foldl`].
@@ -551,16 +576,18 @@ impl<F: Clone, A: Clone, B: Clone, OB, E> Clone for TryFoldl<F, A, B, OB, E> {
     }
 }
 
-impl<'src, I, F, A, B, OA, OB, E> Parser<'src, I, OA, E> for TryFoldl<F, A, B, OB, E>
+impl<'src, I, F, A, B, E> Parser<'src, I, E> for TryFoldl<F, A, B, B::Item, E>
 where
     I: Input<'src>,
-    A: Parser<'src, I, OA, E>,
-    B: IterParser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
-    F: Fn(OA, OB, &mut MapExtra<'src, '_, I, E>) -> Result<OA, E::Error>,
+    F: Fn(A::Output, B::Item, &mut MapExtra<'src, '_, I, E>) -> Result<A::Output, E::Error>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -595,19 +622,19 @@ where
         }
     }
 
-    go_extra!(OA);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::try_map`].
-pub struct TryMap<A, OA, F> {
+pub struct TryMap<A, OA, O, F> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
     #[allow(dead_code)]
-    pub(crate) phantom: EmptyPhantom<OA>,
+    pub(crate) phantom: EmptyPhantom<(OA, O)>,
 }
 
-impl<A: Copy, OA, F: Copy> Copy for TryMap<A, OA, F> {}
-impl<A: Clone, OA, F: Clone> Clone for TryMap<A, OA, F> {
+impl<A: Copy, OA, O, F: Copy> Copy for TryMap<A, OA, O, F> {}
+impl<A: Clone, OA, O, F: Clone> Clone for TryMap<A, OA, O, F> {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
@@ -617,15 +644,17 @@ impl<A: Clone, OA, F: Clone> Clone for TryMap<A, OA, F> {
     }
 }
 
-impl<'src, I, O, E, A, OA, F> Parser<'src, I, O, E> for TryMap<A, OA, F>
+impl<'src, I, E, A, O, F> Parser<'src, I, E> for TryMap<A, A::Output, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn(OA, I::Span) -> Result<O, E::Error>,
+    A: Parser<'src, I, E>,
+    F: Fn(A::Output, I::Span) -> Result<O, E::Error>,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         // Remove the pre-inner alt, to be reinserted later so we always preserve it
         let old_alt = inp.errors.alt.take();
@@ -652,19 +681,19 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::try_map_with`].
-pub struct TryMapWith<A, OA, F> {
+pub struct TryMapWith<A, OA, O, F> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
     #[allow(dead_code)]
-    pub(crate) phantom: EmptyPhantom<OA>,
+    pub(crate) phantom: EmptyPhantom<(OA, O)>,
 }
 
-impl<A: Copy, OA, F: Copy> Copy for TryMapWith<A, OA, F> {}
-impl<A: Clone, OA, F: Clone> Clone for TryMapWith<A, OA, F> {
+impl<A: Copy, OA, O, F: Copy> Copy for TryMapWith<A, OA, O, F> {}
+impl<A: Clone, OA, O, F: Clone> Clone for TryMapWith<A, OA, O, F> {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
@@ -674,15 +703,17 @@ impl<A: Clone, OA, F: Clone> Clone for TryMapWith<A, OA, F> {
     }
 }
 
-impl<'src, I, O, E, A, OA, F> Parser<'src, I, O, E> for TryMapWith<A, OA, F>
+impl<'src, I, E, A, O, F> Parser<'src, I, E> for TryMapWith<A, A::Output, O, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn(OA, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
+    A: Parser<'src, I, E>,
+    F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         let out = self.parser.go::<Emit>(inp)?;
         match (self.mapper)(out, &mut MapExtra::new(&before, inp)) {
@@ -694,7 +725,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::to`].
@@ -716,20 +747,22 @@ impl<A: Clone, OA, O: Clone> Clone for To<A, OA, O> {
     }
 }
 
-impl<'src, I, O, E, A, OA> Parser<'src, I, O, E> for To<A, OA, O>
+impl<'src, I, E, A, O> Parser<'src, I, E> for To<A, A::Output, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E>,
     O: Clone,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.parser.go::<Check>(inp)?;
         Ok(M::bind(|| self.to.clone()))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::into_iter`].
@@ -749,32 +782,36 @@ impl<A: Clone, O> Clone for IntoIter<A, O> {
     }
 }
 
-impl<'src, A, O, I, E> Parser<'src, I, (), E> for IntoIter<A, O>
+impl<'src, A, O, I, E> Parser<'src, I, E> for IntoIter<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
     O: IntoIterator,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         self.parser.go::<Check>(inp)?;
         Ok(M::bind(|| ()))
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
-impl<'src, A, O, I, E> IterParser<'src, I, O::Item, E> for IntoIter<A, O>
+impl<'src, A, I, E> IterParser<'src, I, E> for IntoIter<A, A::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
-    O: IntoIterator,
+    A: Parser<'src, I, E>,
+    A::Output: IntoIterator,
 {
+    type Item = <<A as Parser<'src, I, E>>::Output as IntoIterator>::Item;
+
     // TODO: Don't always produce output for non-emitting modes, but needed due to length. Use some way to 'select'
     // between iterator and usize at compile time.
-    type IterState<M: Mode> = O::IntoIter; //M::Output<O::IntoIter>;
+    type IterState<M: Mode> = <<A as Parser<'src, I, E>>::Output as IntoIterator>::IntoIter; //M::Output<O::IntoIter>;
 
     const NONCONSUMPTION_IS_OK: bool = true;
 
@@ -792,7 +829,7 @@ where
         &self,
         _inp: &mut InputRef<'src, '_, I, E>,
         iter: &mut Self::IterState<M>,
-    ) -> IPResult<M, O::Item> {
+    ) -> IPResult<M, Self::Item> {
         Ok(iter.next().map(|out| M::bind(|| out)))
     }
 }
@@ -814,19 +851,21 @@ impl<A: Clone, OA> Clone for Ignored<A, OA> {
     }
 }
 
-impl<'src, I, E, A, OA> Parser<'src, I, (), E> for Ignored<A, OA>
+impl<'src, I, E, A> Parser<'src, I, E> for Ignored<A, A::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         self.parser.go::<Check>(inp)?;
         Ok(M::bind(|| ()))
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::unwrapped`].
@@ -848,15 +887,17 @@ impl<A: Clone, O> Clone for Unwrapped<A, O> {
     }
 }
 
-impl<'src, I, E, A, O, U> Parser<'src, I, O, E> for Unwrapped<A, Result<O, U>>
+impl<'src, I, E, A, O, U> Parser<'src, I, E> for Unwrapped<A, Result<O, U>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, Result<O, U>, E>,
+    A: Parser<'src, I, E, Output = Result<O, U>>,
     U: fmt::Debug,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let out = self.parser.go::<M>(inp)?;
         Ok(M::map(out, |out| match out {
             Ok(out) => out,
@@ -867,17 +908,19 @@ where
         }))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, O, E> for Unwrapped<A, Option<O>>
+impl<'src, I, E, A, O> Parser<'src, I, E> for Unwrapped<A, Option<O>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, Option<O>, E>,
+    A: Parser<'src, I, E, Output = Option<O>>,
 {
+    type Output = O;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let out = self.parser.go::<M>(inp)?;
         Ok(M::map(out, |out| match out {
             Some(out) => out,
@@ -888,7 +931,7 @@ where
         }))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::memoized`].
@@ -899,15 +942,17 @@ pub struct Memoized<A> {
 }
 
 #[cfg(feature = "memoization")]
-impl<'src, I, E, A, O> Parser<'src, I, O, E> for Memoized<A>
+impl<'src, I, E, A> Parser<'src, I, E> for Memoized<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
     E::Error: Clone,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         // TODO: Don't use address, since this might not be constant?
         let key = (
@@ -944,7 +989,7 @@ where
         res
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::then`].
@@ -966,30 +1011,33 @@ impl<A: Clone, B: Clone, OA, OB, E> Clone for Then<A, B, OA, OB, E> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, (OA, OB), E> for Then<A, B, OA, OB, E>
+impl<'src, I, E, A, B> Parser<'src, I, E> for Then<A, B, A::Output, B::Output, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = (A::Output, B::Output);
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, (OA, OB)> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let a = self.parser_a.go::<M>(inp)?;
         let b = self.parser_b.go::<M>(inp)?;
-        Ok(M::combine(a, b, |a: OA, b: OB| (a, b)))
+        Ok(M::combine(a, b, |a: A::Output, b: B::Output| (a, b)))
     }
 
-    go_extra!((OA, OB));
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, E, A, B, O, U, V> IterParser<'src, I, O, E> for Then<A, B, U, V, E>
+impl<'src, I, E, A, B, U, V> IterParser<'src, I, E> for Then<A, B, U, V, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, O, E>,
-    B: IterParser<'src, I, O, E>,
+    A: IterParser<'src, I, E>,
+    B: IterParser<'src, I, E, Item = A::Item>,
 {
+    type Item = A::Item;
     type IterState<M: Mode>
         = (A::IterState<M>, Option<B::IterState<M>>)
     where
@@ -1010,7 +1058,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         match state {
             (_, Some(b)) => self.parser_b.next(inp, b),
             (a, b) => match self.parser_a.next(inp, a)? {
@@ -1043,21 +1091,23 @@ impl<A: Clone, B: Clone, OA, E> Clone for IgnoreThen<A, B, OA, E> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, OB, E> for IgnoreThen<A, B, OA, E>
+impl<'src, I, E, A, B> Parser<'src, I, E> for IgnoreThen<A, B, A::Output, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = B::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OB> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.parser_a.go::<Check>(inp)?;
         let b = self.parser_b.go::<M>(inp)?;
-        Ok(M::map(b, |b: OB| b))
+        Ok(M::map(b, |b: B::Output| b))
     }
 
-    go_extra!(OB);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::then_ignore`].
@@ -1079,21 +1129,23 @@ impl<A: Clone, B: Clone, OB, E> Clone for ThenIgnore<A, B, OB, E> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, OA, E> for ThenIgnore<A, B, OB, E>
+impl<'src, I, E, A, B> Parser<'src, I, E> for ThenIgnore<A, B, B::Output, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let a = self.parser_a.go::<M>(inp)?;
         self.parser_b.go::<Check>(inp)?;
-        Ok(M::map(a, |a: OA| a))
+        Ok(M::map(a, |a: A::Output| a))
     }
 
-    go_extra!(OA);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::nested_in`].
@@ -1115,17 +1167,19 @@ impl<A: Clone, B: Clone, J, F, O, E> Clone for NestedIn<A, B, J, F, O, E> {
     }
 }
 
-impl<'src, I, J, E, F, A, B, O> Parser<'src, I, O, E> for NestedIn<A, B, J, F, O, E>
+impl<'src, I, J, E, F, A, B> Parser<'src, I, E> for NestedIn<A, B, J, F, A::Output, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    B: Parser<'src, I, J, E>,
+    B: Parser<'src, I, E, Output = J>,
     J: Input<'src>,
     F: ParserExtra<'src, J, State = E::State, Context = E::Context, Error = E::Error>,
-    A: Parser<'src, J, O, F>,
+    A: Parser<'src, J, F>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let inp2 = self.parser_b.go::<Emit>(inp)?;
 
         let alt = inp.errors.alt.take();
@@ -1152,7 +1206,7 @@ where
         res
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::ignore_with_ctx`].
@@ -1174,35 +1228,39 @@ impl<A: Clone, B: Clone, OA, I, E> Clone for IgnoreWithCtx<A, B, OA, I, E> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, OB, E>
-    for IgnoreWithCtx<A, B, OA, I, extra::Full<E::Error, E::State, OA>>
+impl<'src, I, E, A, B> Parser<'src, I, E>
+    for IgnoreWithCtx<A, B, A::Output, I, extra::Full<E::Error, E::State, A::Output>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, extra::Full<E::Error, E::State, OA>>,
-    OA: 'src,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, extra::Full<E::Error, E::State, A::Output>>,
+    A::Output: 'src,
 {
+    type Output = B::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OB> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let p1 = self.parser.go::<Emit>(inp)?;
         inp.with_ctx(&p1, |inp| self.then.go::<M>(inp))
     }
 
-    go_extra!(OB);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, E, A, B, OA, OB> IterParser<'src, I, OB, E>
-    for IgnoreWithCtx<A, B, OA, I, extra::Full<E::Error, E::State, OA>>
+impl<'src, I, E, A, B> IterParser<'src, I, E>
+    for IgnoreWithCtx<A, B, A::Output, I, extra::Full<E::Error, E::State, A::Output>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: IterParser<'src, I, OB, extra::Full<E::Error, E::State, OA>>,
-    OA: 'src,
+    A: Parser<'src, I, E>,
+    B: IterParser<'src, I, extra::Full<E::Error, E::State, A::Output>>,
+    A::Output: 'src,
 {
+    type Item = B::Item;
+
     type IterState<M: Mode>
-        = (OA, B::IterState<M>)
+        = (A::Output, B::IterState<M>)
     where
         I: 'src;
 
@@ -1223,7 +1281,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, OB> {
+    ) -> IPResult<M, Self::Item> {
         let (ctx, inner_state) = state;
 
         inp.with_ctx(ctx, |inp| self.then.next(inp, inner_state))
@@ -1249,36 +1307,39 @@ impl<A: Clone, B: Clone, OA, I, E> Clone for ThenWithCtx<A, B, OA, I, E> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, (OA, OB), E>
-    for ThenWithCtx<A, B, OA, I, extra::Full<E::Error, E::State, OA>>
+impl<'src, I, E, A, B> Parser<'src, I, E>
+    for ThenWithCtx<A, B, A::Output, I, extra::Full<E::Error, E::State, A::Output>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, extra::Full<E::Error, E::State, OA>>,
-    OA: 'src,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, extra::Full<E::Error, E::State, A::Output>>,
+    A::Output: 'src,
 {
+    type Output = (A::Output, B::Output);
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, (OA, OB)> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let p1 = self.parser.go::<Emit>(inp)?;
         let p2 = inp.with_ctx(&p1, |inp| self.then.go::<M>(inp))?;
         Ok(M::map(p2, |p2| (p1, p2)))
     }
 
-    go_extra!((OA, OB));
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, E, A, B, OA, OB> IterParser<'src, I, OB, E>
-    for ThenWithCtx<A, B, OA, I, extra::Full<E::Error, E::State, OA>>
+impl<'src, I, E, A, B> IterParser<'src, I, E>
+    for ThenWithCtx<A, B, A::Output, I, extra::Full<E::Error, E::State, A::Output>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: IterParser<'src, I, OB, extra::Full<E::Error, E::State, OA>>,
-    OA: 'src,
+    A: Parser<'src, I, E>,
+    B: IterParser<'src, I, extra::Full<E::Error, E::State, A::Output>>,
+    A::Output: 'src,
 {
+    type Item = B::Item;
     type IterState<M: Mode>
-        = (OA, B::IterState<M>)
+        = (A::Output, B::IterState<M>)
     where
         I: 'src;
 
@@ -1299,7 +1360,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, OB> {
+    ) -> IPResult<M, Self::Item> {
         let (ctx, inner_state) = state;
 
         inp.with_ctx(ctx, |inp| self.then.next(inp, inner_state))
@@ -1322,19 +1383,21 @@ impl<A: Clone, Ctx: Clone> Clone for WithCtx<A, Ctx> {
     }
 }
 
-impl<'src, I, O, E, A, Ctx> Parser<'src, I, O, E> for WithCtx<A, Ctx>
+impl<'src, I, E, A, Ctx> Parser<'src, I, E> for WithCtx<A, Ctx>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, extra::Full<E::Error, E::State, Ctx>>,
+    A: Parser<'src, I, extra::Full<E::Error, E::State, Ctx>>,
     Ctx: 'src,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         inp.with_ctx(&self.ctx, |inp| self.parser.go::<M>(inp))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::with_state`].
@@ -1353,19 +1416,21 @@ impl<A: Clone, Ctx: Clone> Clone for WithState<A, Ctx> {
     }
 }
 
-impl<'src, I, O, E, A, State> Parser<'src, I, O, E> for WithState<A, State>
+impl<'src, I, E, A, State> Parser<'src, I, E> for WithState<A, State>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, extra::Full<E::Error, State, E::Context>>,
+    A: Parser<'src, I, extra::Full<E::Error, State, E::Context>>,
     State: 'src + Clone + Inspector<'src, I>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         inp.with_state(&mut self.state.clone(), |inp| self.parser.go::<M>(inp))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::delimited_by`].
@@ -1389,23 +1454,25 @@ impl<A: Clone, B: Clone, C: Clone, OB, OC> Clone for DelimitedBy<A, B, C, OB, OC
     }
 }
 
-impl<'src, I, E, A, B, C, OA, OB, OC> Parser<'src, I, OA, E> for DelimitedBy<A, B, C, OB, OC>
+impl<'src, I, E, A, B, C> Parser<'src, I, E> for DelimitedBy<A, B, C, B::Output, C::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
-    C: Parser<'src, I, OC, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
+    C: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.start.go::<Check>(inp)?;
         let a = self.parser.go::<M>(inp)?;
         self.end.go::<Check>(inp)?;
         Ok(a)
     }
 
-    go_extra!(OA);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::padded_by`].
@@ -1427,22 +1494,24 @@ impl<A: Clone, B: Clone, OB> Clone for PaddedBy<A, B, OB> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, OA, E> for PaddedBy<A, B, OB>
+impl<'src, I, E, A, B> Parser<'src, I, E> for PaddedBy<A, B, B::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.padding.go::<Check>(inp)?;
         let a = self.parser.go::<M>(inp)?;
         self.padding.go::<Check>(inp)?;
         Ok(a)
     }
 
-    go_extra!(OA);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::or`].
@@ -1451,19 +1520,21 @@ pub struct Or<A, B> {
     pub(crate) choice: crate::primitive::Choice<(A, B)>,
 }
 
-impl<'src, I, O, E, A, B> Parser<'src, I, O, E> for Or<A, B>
+impl<'src, I, E, A, B> Parser<'src, I, E> for Or<A, B>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
-    B: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E, Output = A::Output>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.choice.go::<M>(inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// Configuration for [`Parser::repeated`], used in [`ConfigParser::configure`].
@@ -1522,7 +1593,7 @@ impl<A: Clone, OA, I, E> Clone for Repeated<A, OA, I, E> {
 
 impl<'src, A, OA, I, E> Repeated<A, OA, I, E>
 where
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E, Output = OA>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1587,12 +1658,14 @@ where
     }
 }
 
-impl<'src, I, E, A, OA> Parser<'src, I, (), E> for Repeated<A, OA, I, E>
+impl<'src, I, E, A> Parser<'src, I, E> for Repeated<A, A::Output, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = ();
+
     #[inline(always)]
     #[allow(clippy::nonminimal_bool)] // TODO: Remove this, lint is currently buggy
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
@@ -1636,15 +1709,16 @@ where
         }
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
-impl<'src, A, O, I, E> IterParser<'src, I, O, E> for Repeated<A, O, I, E>
+impl<'src, A, I, E> IterParser<'src, I, E> for Repeated<A, A::Output, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Item = A::Output;
     type IterState<M: Mode> = usize;
 
     #[inline(always)]
@@ -1660,7 +1734,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         count: &mut Self::IterState<M>,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         if *count as u64 >= self.at_most {
             return Ok(None);
         }
@@ -1683,11 +1757,11 @@ where
     }
 }
 
-impl<'src, A, O, I, E> ConfigIterParser<'src, I, O, E> for Repeated<A, O, I, E>
+impl<'src, A, I, E> ConfigIterParser<'src, I, E> for Repeated<A, A::Output, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
     type Config = RepeatedCfg;
 
@@ -1697,7 +1771,7 @@ where
         inp: &mut InputRef<'src, '_, I, E>,
         count: &mut Self::IterState<M>,
         cfg: &Self::Config,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         let at_most = cfg.at_most.map(|x| x as u64).unwrap_or(self.at_most);
         let at_least = cfg.at_least.unwrap_or(self.at_least);
 
@@ -1755,10 +1829,10 @@ impl<A: Clone, B: Clone, OA, OB, I, E> Clone for SeparatedBy<A, B, OA, OB, I, E>
     }
 }
 
-impl<'src, A, B, OA, OB, I, E> SeparatedBy<A, B, OA, OB, I, E>
+impl<'src, A, B, I, E> SeparatedBy<A, B, A::Output, B::Output, I, E>
 where
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1892,13 +1966,14 @@ where
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> IterParser<'src, I, OA, E> for SeparatedBy<A, B, OA, OB, I, E>
+impl<'src, I, E, A, B> IterParser<'src, I, E> for SeparatedBy<A, B, A::Output, B::Output, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Item = A::Output;
     type IterState<M: Mode>
         = usize
     where
@@ -1917,7 +1992,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, OA> {
+    ) -> IPResult<M, Self::Item> {
         if *state as u64 >= self.at_most {
             return Ok(None);
         }
@@ -1973,13 +2048,15 @@ where
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, (), E> for SeparatedBy<A, B, OA, OB, I, E>
+impl<'src, I, E, A, B> Parser<'src, I, E> for SeparatedBy<A, B, A::Output, B::Output, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         let mut state = self.make_iter::<Check>(inp)?;
@@ -2003,7 +2080,7 @@ where
         }
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
 /// See [`IterParser::enumerate`].
@@ -2023,12 +2100,13 @@ impl<A: Clone, O> Clone for Enumerate<A, O> {
     }
 }
 
-impl<'src, I, O, E, A> IterParser<'src, I, (usize, O), E> for Enumerate<A, O>
+impl<'src, I, E, A> IterParser<'src, I, E> for Enumerate<A, A::Item>
 where
-    A: IterParser<'src, I, O, E>,
+    A: IterParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Item = (usize, A::Item);
     type IterState<M: Mode>
         = (usize, A::IterState<M>)
     where
@@ -2049,7 +2127,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, (usize, O)> {
+    ) -> IPResult<M, Self::Item> {
         let out = self
             .parser
             .next(inp, &mut state.1)?
@@ -2080,13 +2158,15 @@ impl<A: Clone, O, C> Clone for Collect<A, O, C> {
     }
 }
 
-impl<'src, I, O, E, A, C> Parser<'src, I, C, E> for Collect<A, O, C>
+impl<'src, I, E, A, C> Parser<'src, I, E> for Collect<A, A::Item, C>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, O, E>,
-    C: Container<O>,
+    A: IterParser<'src, I, E>,
+    C: Container<A::Item>,
 {
+    type Output = C;
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, C> {
         let mut output = M::bind::<C, _>(|| C::default());
@@ -2119,7 +2199,7 @@ where
         }
     }
 
-    go_extra!(C);
+    go_extra!(Self::Output);
 }
 
 /// See [`IterParser::collect_exactly`]
@@ -2139,13 +2219,15 @@ impl<A: Clone, O, C> Clone for CollectExactly<A, O, C> {
     }
 }
 
-impl<'src, I, O, E, A, C> Parser<'src, I, C, E> for CollectExactly<A, O, C>
+impl<'src, I, E, A, C> Parser<'src, I, E> for CollectExactly<A, A::Item, C>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, O, E>,
-    C: ContainerExactly<O>,
+    A: IterParser<'src, I, E>,
+    C: ContainerExactly<A::Item>,
 {
+    type Output = C;
+
     #[inline]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, C> {
         // let before = inp.cursor();
@@ -2179,7 +2261,7 @@ where
         Ok(M::map(output, |output| unsafe { C::take(output) }))
     }
 
-    go_extra!(C);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::or_not`].
@@ -2188,33 +2270,36 @@ pub struct OrNot<A> {
     pub(crate) parser: A,
 }
 
-impl<'src, I, O, E, A> Parser<'src, I, Option<O>, E> for OrNot<A>
+impl<'src, I, E, A> Parser<'src, I, E> for OrNot<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = Option<A::Output>;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Option<O>> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.save();
         Ok(match self.parser.go::<M>(inp) {
-            Ok(out) => M::map::<O, _, _>(out, Some),
+            Ok(out) => M::map::<A::Output, _, _>(out, Some),
             Err(()) => {
                 inp.rewind(before);
-                M::bind::<Option<O>, _>(|| None)
+                M::bind::<Self::Output, _>(|| None)
             }
         })
     }
 
-    go_extra!(Option<O>);
+    go_extra!(Self::Output);
 }
 
-impl<'src, A, O, I, E> IterParser<'src, I, O, E> for OrNot<A>
+impl<'src, A, I, E> IterParser<'src, I, E> for OrNot<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Item = A::Output;
     type IterState<M: Mode> = bool;
 
     const NONCONSUMPTION_IS_OK: bool = true;
@@ -2232,7 +2317,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         finished: &mut Self::IterState<M>,
-    ) -> IPResult<M, O> {
+    ) -> IPResult<M, Self::Item> {
         if *finished {
             return Ok(None);
         }
@@ -2269,12 +2354,14 @@ impl<A: Clone, OA> Clone for Not<A, OA> {
     }
 }
 
-impl<'src, I, E, A, OA> Parser<'src, I, (), E> for Not<A, OA>
+impl<'src, I, E, A> Parser<'src, I, E> for Not<A, A::Output>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = ();
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
         let before = inp.save();
@@ -2301,7 +2388,7 @@ where
         }
     }
 
-    go_extra!(());
+    go_extra!(Self::Output);
 }
 
 /// See [`IterParser::flatten`].
@@ -2325,14 +2412,18 @@ impl<A: Clone, O> Clone for Flatten<A, O> {
 }
 
 #[cfg(feature = "nightly")]
-impl<'src, A, O, I, E> IterParser<'src, I, O::Item, E> for Flatten<A, O>
+impl<'src, A, I, E> IterParser<'src, I, E> for Flatten<A, A::Item>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: IterParser<'src, I, O, E>,
-    O: IntoIterator,
+    A: IterParser<'src, I, E>,
+    A::Item: IntoIterator,
 {
-    type IterState<M: Mode> = (A::IterState<M>, Option<M::Output<O::IntoIter>>);
+    type Item = <<A as IterParser<'src, I, E>>::Item as IntoIterator>::Item;
+    type IterState<M: Mode> = (
+        A::IterState<M>,
+        Option<M::Output<<<A as IterParser<'src, I, E>>::Item as IntoIterator>::IntoIter>>,
+    );
 
     // A::NONCONSUMPTION_IS_OK cannot be used because if we are iterating
     // over O, we are not consuming any input (input has probably
@@ -2352,7 +2443,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         (st, iter): &mut Self::IterState<M>,
-    ) -> IPResult<M, O::Item> {
+    ) -> IPResult<M, Self::Item> {
         if let Some(item) = iter
             .as_mut()
             .and_then(|i| M::get_or(M::map(M::from_mut(i), |i| i.next()), || None))
@@ -2404,15 +2495,17 @@ impl<A: Clone, B: Clone, OB> Clone for AndIs<A, B, OB> {
     }
 }
 
-impl<'src, I, E, A, B, OA, OB> Parser<'src, I, OA, E> for AndIs<A, B, OB>
+impl<'src, I, E, A, B> Parser<'src, I, E> for AndIs<A, B, B::Output>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    B: Parser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.save().clone();
         match self.parser_a.go::<M>(inp) {
             Ok(out) => {
@@ -2440,7 +2533,7 @@ where
         }
     }
 
-    go_extra!(OA);
+    go_extra!(Self::Output);
 }
 
 /// See [`IterParser::foldr`].
@@ -2468,16 +2561,18 @@ impl<F: Clone, A: Clone, B: Clone, OA, E> Clone for Foldr<F, A, B, OA, E> {
     }
 }
 
-impl<'src, I, F, A, B, O, OA, E> Parser<'src, I, O, E> for Foldr<F, A, B, OA, E>
+impl<'src, I, E, A, B, F> Parser<'src, I, E> for Foldr<F, A, B, A::Item, E>
 where
     I: Input<'src>,
-    A: IterParser<'src, I, OA, E>,
-    B: Parser<'src, I, O, E>,
     E: ParserExtra<'src, I>,
-    F: Fn(OA, O) -> O,
+    A: IterParser<'src, I, E>,
+    B: Parser<'src, I, E>,
+    F: Fn(A::Item, B::Output) -> B::Output,
 {
+    type Output = B::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2510,7 +2605,7 @@ where
         }))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`IterParser::foldr_with`].
@@ -2538,16 +2633,18 @@ impl<F: Clone, A: Clone, B: Clone, OA, E> Clone for FoldrWith<F, A, B, OA, E> {
     }
 }
 
-impl<'src, I, F, A, B, O, OA, E> Parser<'src, I, O, E> for FoldrWith<F, A, B, OA, E>
+impl<'src, I, E, A, B, F> Parser<'src, I, E> for FoldrWith<F, A, B, A::Item, E>
 where
     I: Input<'src>,
-    A: IterParser<'src, I, OA, E>,
-    B: Parser<'src, I, O, E>,
     E: ParserExtra<'src, I>,
-    F: Fn(OA, O, &mut MapExtra<'src, '_, I, E>) -> O,
+    A: IterParser<'src, I, E>,
+    B: Parser<'src, I, E>,
+    F: Fn(A::Item, B::Output, &mut MapExtra<'src, '_, I, E>) -> B::Output,
 {
+    type Output = B::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2583,7 +2680,7 @@ where
         }))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::foldl`].
@@ -2611,16 +2708,18 @@ impl<F: Clone, A: Clone, B: Clone, OB, E> Clone for Foldl<F, A, B, OB, E> {
     }
 }
 
-impl<'src, I, F, A, B, O, OB, E> Parser<'src, I, O, E> for Foldl<F, A, B, OB, E>
+impl<'src, I, E, A, B, F> Parser<'src, I, E> for Foldl<F, A, B, B::Item, E>
 where
     I: Input<'src>,
-    A: Parser<'src, I, O, E>,
-    B: IterParser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
-    F: Fn(O, OB) -> O,
+    F: Fn(A::Output, B::Item) -> A::Output,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2647,7 +2746,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::foldl_with`].
@@ -2675,16 +2774,18 @@ impl<F: Clone, A: Clone, B: Clone, OB, E> Clone for FoldlWith<F, A, B, OB, E> {
     }
 }
 
-impl<'src, I, F, A, B, O, OB, E> Parser<'src, I, O, E> for FoldlWith<F, A, B, OB, E>
+impl<'src, I, E, A, B, F> Parser<'src, I, E> for FoldlWith<F, A, B, B::Item, E>
 where
     I: Input<'src>,
-    A: Parser<'src, I, O, E>,
-    B: IterParser<'src, I, OB, E>,
+    A: Parser<'src, I, E>,
+    B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
-    F: Fn(O, OB, &mut MapExtra<'src, '_, I, E>) -> O,
+    F: Fn(A::Output, B::Item, &mut MapExtra<'src, '_, I, E>) -> A::Output,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2714,7 +2815,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::rewind`].
@@ -2724,14 +2825,16 @@ pub struct Rewind<A> {
     pub(crate) parser: A,
 }
 
-impl<'src, I, O, E, A> Parser<'src, I, O, E> for Rewind<A>
+impl<'src, I, E, A> Parser<'src, I, E> for Rewind<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.save();
         match self.parser.go::<M>(inp) {
             Ok(out) => {
@@ -2742,7 +2845,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::map_err`].
@@ -2752,15 +2855,17 @@ pub struct MapErr<A, F> {
     pub(crate) mapper: F,
 }
 
-impl<'src, I, O, E, A, F> Parser<'src, I, O, E> for MapErr<A, F>
+impl<'src, I, E, A, F> Parser<'src, I, E> for MapErr<A, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
     F: Fn(E::Error) -> E::Error,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2769,7 +2874,7 @@ where
             .go::<M>(inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 // /// See [`Parser::map_err_with_span`].
@@ -2779,15 +2884,17 @@ where
 //     pub(crate) mapper: F,
 // }
 
-// impl<'src, I, O, E, A, F> Parser<'src, I, O, E> for MapErrWithSpan<A, F>
+// impl<'src, I, E, A, F> Parser<'src, I, E> for MapErrWithSpan<A, F>
 // where
 //     I: Input<'src>,
 //     E: ParserExtra<'src, I>,
-//     A: Parser<'src, I, O, E>,
+//     A: Parser<'src, I, E>,
 //     F: Fn(E::Error, I::Span) -> E::Error,
 // {
+//     type Output = A::Output;
+//
 //     #[inline(always)]
-//     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+//     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
 //     where
 //         Self: Sized,
 //     {
@@ -2804,7 +2911,7 @@ where
 //         res
 //     }
 
-//     go_extra!(O);
+//     go_extra!(Self::Output);
 // }
 
 // TODO: Remove combinator, replace with map_err_with
@@ -2815,15 +2922,17 @@ pub struct MapErrWithState<A, F> {
     pub(crate) mapper: F,
 }
 
-impl<'src, I, O, E, A, F> Parser<'src, I, O, E> for MapErrWithState<A, F>
+impl<'src, I, E, A, F> Parser<'src, I, E> for MapErrWithState<A, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
     F: Fn(E::Error, I::Span, &mut E::State) -> E::Error,
 {
+    type Output = A::Output;
+
     #[inline(always)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -2844,7 +2953,7 @@ where
         res
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// See [`Parser::validate`]
@@ -2866,13 +2975,15 @@ impl<A: Clone, OA, F: Clone> Clone for Validate<A, OA, F> {
     }
 }
 
-impl<'src, I, OA, U, E, A, F> Parser<'src, I, U, E> for Validate<A, OA, F>
+impl<'src, I, U, E, A, F> Parser<'src, I, E> for Validate<A, A::Output, F>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, OA, E>,
-    F: Fn(OA, &mut MapExtra<'src, '_, I, E>, &mut Emitter<E::Error>) -> U,
+    A: Parser<'src, I, E>,
+    F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>, &mut Emitter<E::Error>) -> U,
 {
+    type Output = U;
+
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, U>
     where
@@ -2889,7 +3000,7 @@ where
         Ok(M::bind(|| out))
     }
 
-    go_extra!(U);
+    go_extra!(Self::Output);
 }
 
 // /// See [`Parser::or_else`].
@@ -2899,15 +3010,17 @@ where
 //     pub(crate) or_else: F,
 // }
 
-// impl<'src, I, O, E, A, F> Parser<'src, I, O, E> for OrElse<A, F>
+// impl<'src, I, E, A, F> Parser<'src, I, E> for OrElse<A, F>
 // where
 //     I: Input<'src>,
 //     E: ParserExtra<'src, I>,
-//     A: Parser<'src, I, O, E>,
-//     F: Fn(E::Error) -> Result<O, E::Error>,
+//     A: Parser<'src, I, E>,
+//     F: Fn(E::Error) -> Result<A::Output, E::Error>,
 // {
+//     type Output = A::Output;
+//
 //     #[inline(always)]
-//     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+//     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
 //     where
 //         Self: Sized,
 //     {
@@ -2933,7 +3046,7 @@ where
 //         }
 //     }
 
-//     go_extra!(O);
+//     go_extra!(Self::Output);
 // }
 
 /// See [`Parser::contextual`].
@@ -2942,25 +3055,27 @@ pub struct Contextual<A> {
     pub(crate) inner: A,
 }
 
-impl<'src, I, O, E, A> Parser<'src, I, O, E> for Contextual<A>
+impl<'src, I, E, A> Parser<'src, I, E> for Contextual<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
+    type Output = A::Output;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         Self::go_cfg::<M>(self, inp, true)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, A> ConfigParser<'src, I, O, E> for Contextual<A>
+impl<'src, I, E, A> ConfigParser<'src, I, E> for Contextual<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
 {
     type Config = bool;
 
@@ -2969,7 +3084,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<M, O> {
+    ) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         if cfg {
             self.inner.go::<M>(inp)

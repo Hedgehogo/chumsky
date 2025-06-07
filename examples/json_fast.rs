@@ -15,7 +15,7 @@ pub enum Json {
     Object(HashMap<String, Json>),
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
+fn parser<'a>() -> impl Parser<'a, &'a str, Output = Json> {
     recursive(|value| {
         let digits = text::digits(10).to_slice();
 
@@ -24,7 +24,7 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
         let exp = just('e')
             .or(just('E'))
             .then(one_of("+-").or_not())
-            .then(digits);
+            .then(digits).boxed();
 
         let number = just('-')
             .or_not()
@@ -32,7 +32,7 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
             .then(frac.or_not())
             .then(exp.or_not())
             .to_slice()
-            .map(|s: &str| s.parse().unwrap());
+            .map(|s: &str| s.parse().unwrap()).boxed();
 
         let escape = just('\\')
             .then(choice((
@@ -55,7 +55,7 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
                     },
                 )),
             )))
-            .ignored();
+            .ignored().boxed();
 
         let string = none_of("\\\"")
             .ignored()
@@ -71,15 +71,15 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
             .allow_trailing()
             .collect()
             .padded()
-            .delimited_by(just('['), just(']'));
+            .delimited_by(just('['), just(']')).boxed();
 
-        let member = string.then_ignore(just(':').padded()).then(value);
+        let member = string.clone().then_ignore(just(':').padded()).then(value).boxed();
         let object = member
             .clone()
             .separated_by(just(',').padded())
             .collect()
             .padded()
-            .delimited_by(just('{'), just('}'));
+            .delimited_by(just('{'), just('}')).boxed();
 
         choice((
             just("null").to(Json::Null),

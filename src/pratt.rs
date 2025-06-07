@@ -533,7 +533,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Infix<'src, A, F, O, O
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, Op, E>,
+    A: Parser<'src, I, E, Output = Op>,
     F: Fn(O, Op, O, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -629,7 +629,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Prefix<'src, A, F, O, 
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, Op, E>,
+    A: Parser<'src, I, E, Output = Op>,
     F: Fn(Op, O, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -714,7 +714,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Postfix<'src, A, F, O,
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, Op, E>,
+    A: Parser<'src, I, E, Output = Op>,
     F: Fn(O, Op, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -922,7 +922,7 @@ impl<'src, Atom, Ops> Pratt<Atom, Ops> {
     where
         I: Input<'src>,
         E: ParserExtra<'src, I>,
-        Atom: Parser<'src, I, O, E>,
+        Atom: Parser<'src, I, E, Output = O>,
         Ops: Operator<'src, I, O, E>,
     {
         let pre_expr = inp.save();
@@ -978,18 +978,20 @@ impl<'src, Atom, Ops> Pratt<Atom, Ops> {
 }
 
 #[allow(unused_variables, non_snake_case)]
-impl<'src, I, O, E, Atom, Ops> Parser<'src, I, O, E> for Pratt<Atom, Ops>
+impl<'src, I, E, Atom, Ops> Parser<'src, I, E> for Pratt<Atom, Ops>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    Atom: Parser<'src, I, O, E>,
-    Ops: Operator<'src, I, O, E>,
+    Atom: Parser<'src, I, E>,
+    Ops: Operator<'src, I, Atom::Output, E>,
 {
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    type Output = Atom::Output;
+
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         self.pratt_go::<M, _, _, _>(inp, 0)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 #[cfg(test)]
@@ -1005,7 +1007,7 @@ mod tests {
         }
     }
 
-    fn parser<'src>() -> impl Parser<'src, &'src str, i64> {
+    fn parser<'src>() -> impl Parser<'src, &'src str, Output = i64> {
         let atom = text::int(10).padded().from_str::<i64>().unwrapped();
 
         atom.pratt((
@@ -1033,7 +1035,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn parser_dynamic<'src>() -> impl Parser<'src, &'src str, i64> {
+    fn parser_dynamic<'src>() -> impl Parser<'src, &'src str, Output = i64> {
         let atom = text::int(10).padded().from_str::<i64>().unwrapped();
 
         atom.pratt(vec![
@@ -1083,7 +1085,7 @@ mod tests {
         e(Box::new(l), Box::new(r))
     }
 
-    fn expr_parser<'src>() -> impl Parser<'src, &'src str, String, Err<Simple<'src, char>>> {
+    fn expr_parser<'src>() -> impl Parser<'src, &'src str, Err<Simple<'src, char>>, Output = String> {
         let atom = text::int(10).from_str().unwrapped().map(Expr::Literal);
 
         atom.pratt((
@@ -1095,7 +1097,7 @@ mod tests {
         .map(|x| x.to_string())
     }
 
-    fn complete_parser<'src>() -> impl Parser<'src, &'src str, String, Err<Simple<'src, char>>> {
+    fn complete_parser<'src>() -> impl Parser<'src, &'src str, Err<Simple<'src, char>>, Output = String> {
         expr_parser().then_ignore(end())
     }
 

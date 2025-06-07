@@ -67,9 +67,9 @@ Here's an example of a typical parser function. We'll go over what each part mea
 
 ```
 # use chumsky::prelude::*;
-//        (1)            (2)              (3)    (4)
-//        _|__       _____|_____       ____|____  |_
-fn parser<'src>() -> impl Parser<'src, &'src str, ()> {
+//        (1)            (2)              (3)         (4)
+//        _|__       _____|_____       ____|____  _____|_____
+fn parser<'src>() -> impl Parser<'src, &'src str, Output = ()> {
     end() // --(5)
 }
 ```
@@ -80,7 +80,7 @@ fn parser<'src>() -> impl Parser<'src, &'src str, ()> {
 
 2. Because large parsers can have rather unwieldy types, we save ourselves the need to declare the exact return type
    with Rust's `impl Trait` syntax. This says to the compiler "we don't actually care what type is returned here, but
-   it needs to implement the `Parser<'src, &'src, str, ()>` trait, you figure it out". Note that, unlike `dyn Trait`
+   it needs to implement the `Parser<'src, &'src, (), Output = str>` trait, you figure it out". Note that, unlike `dyn Trait`
    syntax, `impl Trait` has no runtime cost: the compiler simply *hides* the type from you rather than performing
    *type erasure*, which would require performing [dynamic dispatch](https://en.wikipedia.org/wiki/Dynamic_dispatch)
    while your code is running.
@@ -91,7 +91,7 @@ fn parser<'src>() -> impl Parser<'src, &'src str, ()> {
    input type as a generic type parameter like `I: Input<'src>` instead if you want your parser to be generic across
    more than just string slices.
 
-4. The second type parameter of the [`Parser`] trait is the output type. This is the type of the value that your parser
+4. The associated `Output` type of the [`Parser`] trait is the output type. This is the type of the value that your parser
    will eventually give you, assuming that parsing was successful. For now, we just use an output type of [`()`], i.e:
    nothing.
 
@@ -119,7 +119,7 @@ Let's write some tests for the parser we wrote in the last section.
 
 ```
 # use chumsky::prelude::*;
-# fn parser<'src>() -> impl Parser<'src, &'src str, ()> { end() }
+# fn parser<'src>() -> impl Parser<'src, &'src str, Output = ()> { end() }
 #[test]
 fn test_parser() {
     // Our parser expects empty strings, so this should parse successfully

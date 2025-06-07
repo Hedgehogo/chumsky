@@ -51,7 +51,7 @@ enum Instr {
 }
 
 /// A function that generates a Brainfuck parser
-fn brainfuck<'a>() -> impl Parser<'a, &'a str, Vec<Instr>> {
+fn brainfuck<'a>() -> impl Parser<'a, &'a str, Output = Vec<Instr>> {
     // Brainfuck syntax is recursive: each instruction can contain many sub-instructions (via `[...]` loops)
     recursive(|bf| choice((
         // All of the basic instructions are just single characters

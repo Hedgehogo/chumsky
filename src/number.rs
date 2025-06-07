@@ -29,7 +29,7 @@ pub const fn number<const F: u128, I, O, E>() -> Number<F, I, O, E> {
 /// A label denoting a parseable number.
 pub struct ExpectedNumber;
 
-impl<'src, const F: u128, I, O, E> Parser<'src, I, O, E> for Number<F, I, O, E>
+impl<'src, const F: u128, I, O, E> Parser<'src, I, E> for Number<F, I, O, E>
 where
     O: FromLexical,
     I: SliceInput<'src, Cursor = usize>,
@@ -37,8 +37,10 @@ where
     E: ParserExtra<'src, I>,
     E::Error: LabelError<'src, I, ExpectedNumber>,
 {
+    type Output = O;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let before = inp.cursor();
         match parse_partial(inp.slice_trailing_inner().as_ref()) {
             Ok((out, skip)) => {
@@ -55,7 +57,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 #[cfg(test)]

@@ -19,11 +19,11 @@ macro_rules! go_extra {
     ( $O :ty ) => {
         #[inline(always)]
         fn go_emit(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Emit, $O> {
-            Parser::<I, $O, E>::go::<Emit>(self, inp)
+            Parser::<I, E>::go::<Emit>(self, inp)
         }
         #[inline(always)]
         fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, $O> {
-            Parser::<I, $O, E>::go::<Check>(self, inp)
+            Parser::<I, E>::go::<Check>(self, inp)
         }
     };
 }
@@ -156,7 +156,7 @@ impl<T> Unpin for EmptyPhantom<T> {}
 impl<T> core::panic::UnwindSafe for EmptyPhantom<T> {}
 impl<T> core::panic::RefUnwindSafe for EmptyPhantom<T> {}
 
-pub(crate) type DynParser<'src, 'b, I, O, E> = dyn Parser<'src, I, O, E> + 'b;
+pub(crate) type DynParser<'src, 'b, I, O, E> = dyn Parser<'src, I, E, Output = O> + 'b;
 #[cfg(feature = "pratt")]
 pub(crate) type DynOperator<'src, 'b, I, O, E> = dyn pratt::Operator<'src, I, O, E> + 'b;
 
@@ -280,7 +280,7 @@ impl<T, E> ParseResult<T, E> {
 /// A trait implemented by parsers.
 ///
 /// Parsers take inputs of type `I`, which will implement [`Input`]. Refer to the documentation on [`Input`] for examples
-/// of common input types. It will then attempt to parse them into a value of type `O`, which may be just about any type.
+/// of common input types. It will then attempt to parse them into a value of type `Output`, which may be just about any type.
 /// In doing so, they may encounter errors. These need not be fatal to the parsing process: syntactic errors can be
 /// recovered from and a valid output may still be generated alongside any syntax errors that were encountered along the
 /// way. Usually, this output comes in the form of an
@@ -318,16 +318,19 @@ impl<T, E> ParseResult<T, E> {
 //         note = "You should check that the output types of your parsers are consistent with the combinators you're using",
 //     )
 // )]
-pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Default> {
+pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default> {
+    /// This is the type of the value that your parser will eventually give you, assuming that parsing was successful.
+    type Output;
+
     #[doc(hidden)]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized;
 
     #[doc(hidden)]
-    fn go_emit(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Emit, O>;
+    fn go_emit(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Emit, Self::Output>;
     #[doc(hidden)]
-    fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, O>;
+    fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, Self::Output>;
 
     /// Parse a stream of tokens, yielding an output if possible, and any errors encountered along the way.
     ///
@@ -336,7 +339,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
-    fn parse(&self, input: I) -> ParseResult<O, E::Error>
+    fn parse(&self, input: I) -> ParseResult<Self::Output, E::Error>
     where
         I: Input<'src>,
         E::State: Default,
@@ -353,7 +356,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
-    fn parse_with_state(&self, input: I, state: &mut E::State) -> ParseResult<O, E::Error>
+    fn parse_with_state(
+        &self,
+        input: I,
+        state: &mut E::State,
+    ) -> ParseResult<Self::Output, E::Error>
     where
         I: Input<'src>,
         E::Context: Default,
@@ -456,7 +463,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///     .lazy();
     /// assert_eq!(even_matcher.parse(&[2, 4, 8, 5, 6]).unwrap(), &[2, 4, 8]);
     /// ```
-    fn to_slice(self) -> ToSlice<Self, O>
+    fn to_slice(self) -> ToSlice<Self, Self::Output>
     where
         Self: Sized,
     {
@@ -483,9 +490,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(lowercase.parse("hello").into_result(), Ok("hello".to_string()));
     /// assert!(lowercase.parse("Hello").has_errors());
     /// ```
-    fn filter<F: Fn(&O) -> bool>(self, f: F) -> Filter<Self, F>
+    fn filter<F>(self, f: F) -> Filter<Self, F>
     where
         Self: Sized,
+        F: Fn(&Self::Output) -> bool,
     {
         Filter {
             parser: self,
@@ -521,9 +529,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(token.parse("test").into_result(), Ok(Token::Word("test".to_string())));
     /// assert_eq!(token.parse("42").into_result(), Ok(Token::Num(42)));
     /// ```
-    fn map<U, F: Fn(O) -> U>(self, f: F) -> Map<Self, O, F>
+    fn map<U, F>(self, f: F) -> Map<Self, Self::Output, U, F>
     where
         Self: Sized,
+        F: Fn(Self::Output) -> U,
     {
         Map {
             parser: self,
@@ -600,7 +609,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// ```
     /// # use chumsky::{prelude::*, error::Simple};
     ///
-    /// fn palindrome_parser<'src>() -> impl Parser<'src, &'src str, String> {
+    /// fn palindrome_parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
     ///     recursive(|chain| {
     ///         choice((
     ///             just(String::new())
@@ -618,9 +627,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(palindrome_parser().parse("hello  olleh").into_result().as_deref(), Ok(" olleh"));
     /// assert!(palindrome_parser().parse("abccb").into_result().is_err());
     /// ```
-    fn map_with<U, F: Fn(O, &mut MapExtra<'src, '_, I, E>) -> U>(self, f: F) -> MapWith<Self, O, F>
+    fn map_with<U, F>(self, f: F) -> MapWith<Self, Self::Output, U, F>
     where
         Self: Sized,
+        F: Fn(Self::Output, &mut MapExtra<'src, '_, I, E>) -> U,
     {
         MapWith {
             parser: self,
@@ -645,7 +655,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///      Three(u8, u8, u8),
     /// }
     ///
-    /// fn parser<'src>() -> impl Parser<'src, &'src [u8], Vec<Value>> {
+    /// fn parser<'src>() -> impl Parser<'src, &'src [u8], Output = Vec<Value>> {
     ///     choice((
     ///         just(1).ignore_then(any()).map(Value::One),
     ///         just(2)
@@ -670,10 +680,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// );
     /// ```
     #[cfg(feature = "nightly")]
-    fn map_group<F: Fn<O>>(self, f: F) -> MapGroup<Self, O, F>
+    fn map_group<F>(self, f: F) -> MapGroup<Self, Self::Output, (), F>
     where
         Self: Sized,
-        O: Tuple,
+        Self::Output: Tuple,
+        F: Fn<Self::Output>,
     {
         MapGroup {
             parser: self,
@@ -723,7 +734,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///     Box::new(Expr::Int("13", (9..11).into())),
     /// )));
     /// ```
-    fn to_span(self) -> ToSpan<Self, O>
+    fn to_span(self) -> ToSpan<Self, Self::Output>
     where
         Self: Sized,
     {
@@ -755,11 +766,15 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert!(sum.parse("255+1").has_errors()); // due to u8 overflow
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn try_foldl<B, F, OB>(self, other: B, f: F) -> TryFoldl<F, Self, B, OB, E>
+    fn try_foldl<B, F, OB>(self, other: B, f: F) -> TryFoldl<F, Self, B, B::Item, E>
     where
-        F: Fn(O, OB, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
-        B: IterParser<'src, I, OB, E>,
         Self: Sized,
+        B: IterParser<'src, I, E, Item = OB>,
+        F: Fn(
+            Self::Output,
+            B::Item,
+            &mut MapExtra<'src, '_, I, E>,
+        ) -> Result<Self::Output, E::Error>,
     {
         TryFoldl {
             parser_a: self,
@@ -792,9 +807,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert!(byte.parse("256").has_errors()); // Out of range
     /// ```
     #[doc(alias = "filter_map")]
-    fn try_map<U, F: Fn(O, I::Span) -> Result<U, E::Error>>(self, f: F) -> TryMap<Self, O, F>
+    fn try_map<U, F>(self, f: F) -> TryMap<Self, Self::Output, U, F>
     where
         Self: Sized,
+        F: Fn(Self::Output, I::Span) -> Result<U, E::Error>,
     {
         TryMap {
             parser: self,
@@ -810,12 +826,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// [`Parser::validate`] instead.
     ///
     /// The output type of this parser is `U`, the [`Ok`] return value of the function.
-    fn try_map_with<U, F: Fn(O, &mut MapExtra<'src, '_, I, E>) -> Result<U, E::Error>>(
-        self,
-        f: F,
-    ) -> TryMapWith<Self, O, F>
+    fn try_map_with<U, F>(self, f: F) -> TryMapWith<Self, Self::Output, U, F>
     where
         Self: Sized,
+        F: Fn(Self::Output, &mut MapExtra<'src, '_, I, E>) -> Result<U, E::Error>,
     {
         TryMapWith {
             parser: self,
@@ -847,7 +861,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(whitespace.parse("    ").into_result(), Ok(vec![(); 4]));
     /// assert!(whitespace.parse("  hello").has_errors());
     /// ```
-    fn ignored(self) -> Ignored<Self, O>
+    fn ignored(self) -> Ignored<Self, Self::Output>
     where
         Self: Sized,
     {
@@ -894,7 +908,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(op.parse("+").into_result(), Ok(Op::Add));
     /// assert_eq!(op.parse("/").into_result(), Ok(Op::Div));
     /// ```
-    fn to<U: Clone>(self, to: U) -> To<Self, O, U>
+    fn to<U: Clone>(self, to: U) -> To<Self, Self::Output, U>
     where
         Self: Sized,
     {
@@ -944,9 +958,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(two_words.parse("dog cat").into_result(), Ok(("dog".to_string(), "cat".to_string())));
     /// assert!(two_words.parse("hedgehog").has_errors());
     /// ```
-    fn then<U, B: Parser<'src, I, U, E>>(self, other: B) -> Then<Self, B, O, U, E>
+    fn then<U, B>(self, other: B) -> Then<Self, B, Self::Output, B::Output, E>
     where
         Self: Sized,
+        B: Parser<'src, I, E, Output = U>,
     {
         Then {
             parser_a: self,
@@ -978,9 +993,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(integer.parse("00064").into_result(), Ok(64));
     /// assert_eq!(integer.parse("32").into_result(), Ok(32));
     /// ```
-    fn ignore_then<U, B: Parser<'src, I, U, E>>(self, other: B) -> IgnoreThen<Self, B, O, E>
+    fn ignore_then<U, B>(self, other: B) -> IgnoreThen<Self, B, Self::Output, E>
     where
         Self: Sized,
+        B: Parser<'src, I, E, Output = U>,
     {
         IgnoreThen {
             parser_a: self,
@@ -991,7 +1007,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Parse one thing and then another thing, yielding only the output of the former.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// If you instead only need the output of the second parser, use [`ignore_then`](Self::ignore_then).
     /// If you need the output of __both__ parsers, use [`then`](Self::then).
@@ -1024,9 +1040,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///     ]),
     /// );
     /// ```
-    fn then_ignore<U, B: Parser<'src, I, U, E>>(self, other: B) -> ThenIgnore<Self, B, U, E>
+    fn then_ignore<U, B>(self, other: B) -> ThenIgnore<Self, B, B::Output, E>
     where
         Self: Sized,
+        B: Parser<'src, I, E, Output = U>,
     {
         ThenIgnore {
             parser_a: self,
@@ -1046,7 +1063,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// `Stream<Iterator<Item = T>>`, `P` will be run first against that input, and is expected to
     /// output a new `Stream<Iterator<Item = T>>` which the original parser will be run against.
     ///
-    /// The output of this parser is `O`, the output of the parser it is called on.
+    /// The output of this parser is `Output`, the output of the parser it is called on.
     ///
     /// # Examples
     ///
@@ -1088,12 +1105,13 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// assert_eq!(tl.parse(&tokens).into_result(), Ok(vec![("foo", vec!["a", "b"])]));
     /// ```
-    fn nested_in<B: Parser<'src, J, I, F>, J, F>(self, other: B) -> NestedIn<Self, B, J, F, O, E>
+    fn nested_in<B, J, F>(self, other: B) -> NestedIn<Self, B, J, F, Self::Output, E>
     where
         Self: Sized,
         I: 'src,
         J: Input<'src>,
         F: ParserExtra<'src, J>,
+        B: Parser<'src, J, F, Output = I>,
     {
         NestedIn {
             parser_a: self,
@@ -1128,11 +1146,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn ignore_with_ctx<U, P>(
         self,
         then: P,
-    ) -> IgnoreWithCtx<Self, P, O, I, extra::Full<E::Error, E::State, O>>
+    ) -> IgnoreWithCtx<Self, P, Self::Output, I, extra::Full<E::Error, E::State, Self::Output>>
     where
         Self: Sized,
-        O: 'src,
-        P: Parser<'src, I, U, extra::Full<E::Error, E::State, O>>,
+        Self::Output: 'src,
+        P: Parser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
     {
         IgnoreWithCtx {
             parser: self,
@@ -1154,11 +1172,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn then_with_ctx<U, P>(
         self,
         then: P,
-    ) -> ThenWithCtx<Self, P, O, I, extra::Full<E::Error, E::State, O>>
+    ) -> ThenWithCtx<Self, P, Self::Output, I, extra::Full<E::Error, E::State, Self::Output>>
     where
         Self: Sized,
-        O: 'src,
-        P: Parser<'src, I, U, extra::Full<E::Error, E::State, O>>,
+        Self::Output: 'src,
+        P: Parser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
     {
         ThenWithCtx {
             parser: self,
@@ -1247,7 +1265,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn and_is<U, B>(self, other: B) -> AndIs<Self, B, U>
     where
         Self: Sized,
-        B: Parser<'src, I, U, E>,
+        B: Parser<'src, I, E, Output = U>,
     {
         AndIs {
             parser_a: self,
@@ -1258,7 +1276,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Parse the pattern surrounded by the given delimiters.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1307,8 +1325,8 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn delimited_by<U, V, B, C>(self, start: B, end: C) -> DelimitedBy<Self, B, C, U, V>
     where
         Self: Sized,
-        B: Parser<'src, I, U, E>,
-        C: Parser<'src, I, V, E>,
+        B: Parser<'src, I, E, Output = U>,
+        C: Parser<'src, I, E, Output = V>,
     {
         DelimitedBy {
             parser: self,
@@ -1320,7 +1338,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Parse a pattern, but with an instance of another pattern on either end, yielding the output of the inner.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1337,7 +1355,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn padded_by<U, B>(self, padding: B) -> PaddedBy<Self, B, U>
     where
         Self: Sized,
-        B: Parser<'src, I, U, E>,
+        B: Parser<'src, I, E, Output = U>,
     {
         PaddedBy {
             parser: self,
@@ -1361,7 +1379,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// Please note that long chains of [`Parser::or`] combinators have been known to result in poor compilation times.
     /// If you feel you are experiencing this, consider using [`choice`] instead.
     ///
-    /// The output type of this parser is `O`, the output of both parsers.
+    /// The output type of this parser is `Output`, the output of both parsers.
     ///
     /// # Examples
     ///
@@ -1379,7 +1397,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     fn or<B>(self, other: B) -> Or<Self, B>
     where
         Self: Sized,
-        B: Parser<'src, I, O, E>,
+        B: Parser<'src, I, E, Output = Self::Output>,
     {
         Or {
             choice: choice((self, other)),
@@ -1473,7 +1491,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///     ])),
     /// );
     /// ```
-    fn not(self) -> Not<Self, O>
+    fn not(self) -> Not<Self, Self::Output>
     where
         Self: Sized,
     {
@@ -1509,7 +1527,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(sum.parse("2+13+4+0+5").into_result(), Ok(24));
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn repeated(self) -> Repeated<Self, O, I, E>
+    fn repeated(self) -> Repeated<Self, Self::Output, I, E>
     where
         Self: Sized,
     {
@@ -1545,10 +1563,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// See [`SeparatedBy::allow_leading`] and [`SeparatedBy::allow_trailing`] for more examples.
     #[cfg_attr(debug_assertions, track_caller)]
-    fn separated_by<U, B>(self, separator: B) -> SeparatedBy<Self, B, O, U, I, E>
+    fn separated_by<U, B>(self, separator: B) -> SeparatedBy<Self, B, Self::Output, B::Output, I, E>
     where
         Self: Sized,
-        B: Parser<'src, I, U, E>,
+        B: Parser<'src, I, E, Output = U>,
     {
         SeparatedBy {
             parser: self,
@@ -1585,11 +1603,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(sum.parse("6").into_result(), Ok(6));
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn foldl<B, F, OB>(self, other: B, f: F) -> Foldl<F, Self, B, OB, E>
+    fn foldl<B, F, OB>(self, other: B, f: F) -> Foldl<F, Self, B, B::Item, E>
     where
-        F: Fn(O, OB) -> O,
-        B: IterParser<'src, I, OB, E>,
         Self: Sized,
+        B: IterParser<'src, I, E, Item = OB>,
+        F: Fn(Self::Output, B::Item) -> Self::Output,
     {
         Foldl {
             parser_a: self,
@@ -1675,11 +1693,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// }
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn foldl_with<B, F, OB>(self, other: B, f: F) -> FoldlWith<F, Self, B, OB, E>
+    fn foldl_with<B, F, OB>(self, other: B, f: F) -> FoldlWith<F, Self, B, B::Item, E>
     where
-        F: Fn(O, OB, &mut MapExtra<'src, '_, I, E>) -> O,
-        B: IterParser<'src, I, OB, E>,
         Self: Sized,
+        B: IterParser<'src, I, E, Item = OB>,
+        F: Fn(Self::Output, B::Item, &mut MapExtra<'src, '_, I, E>) -> Self::Output,
     {
         FoldlWith {
             parser_a: self,
@@ -1698,7 +1716,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// causing later parsers to fail as a result. A typical use-case of this is that you want to parse something that
     /// is not followed by something else.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1722,7 +1740,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Make the parser lazy, such that it parses as much of the input as it can finishes successfully, leaving the trailing input untouched.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1745,7 +1763,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Parse a pattern, ignoring any amount of whitespace both before and after the pattern.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1794,7 +1812,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// run into cases where valid syntax fails to parse without errors, this might be happening: consider removing
     /// error recovery or switching to a more specific error recovery strategy.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -1833,9 +1851,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// // Additionally, the AST we get back still has useful information.
     /// assert_eq!(res.output(), Some(&Expr::List(vec![Expr::Error, Expr::Error])));
     /// ```
-    fn recover_with<S: Strategy<'src, I, O, E>>(self, strategy: S) -> RecoverWith<Self, S>
+    fn recover_with<S>(self, strategy: S) -> RecoverWith<Self, S>
     where
         Self: Sized,
+        S: Strategy<'src, I, Self::Output, E>,
     {
         RecoverWith {
             parser: self,
@@ -1848,7 +1867,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// This function is most useful when using a custom error type, allowing you to augment errors according to
     /// context.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     // TODO: Map E -> D, not E -> E
     fn map_err<F>(self, f: F) -> MapErr<Self, F>
     where
@@ -1867,7 +1886,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     // /// This function is useful for augmenting errors to allow them to display the span of the initial part of a
     // /// pattern, for example to add a "while parsing" clause to your error messages.
     // ///
-    // /// The output type of this parser is `O`, the same as the original parser.
+    // /// The output type of this parser is `Output`, the same as the original parser.
     // ///
     // // TODO: Map E -> D, not E -> E
     // fn map_err_with_span<F>(self, f: F) -> MapErrWithSpan<Self, F>
@@ -1886,7 +1905,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// This function is useful for augmenting errors to allow them to include context in non context-free
     /// languages, or provide contextual notes on possible causes.
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     // TODO: Map E -> D, not E -> E
     fn map_err_with_state<F>(self, f: F) -> MapErrWithState<Self, F>
@@ -1988,10 +2007,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// As is seen in the above example, validation doesn't prevent the emission of later errors in the
     /// same parser, but still produces an error in the output.
     ///
-    fn validate<U, F>(self, f: F) -> Validate<Self, O, F>
+    fn validate<U, F>(self, f: F) -> Validate<Self, Self::Output, F>
     where
         Self: Sized,
-        F: Fn(O, &mut MapExtra<'src, '_, I, E>, &mut Emitter<E::Error>) -> U,
+        F: Fn(Self::Output, &mut MapExtra<'src, '_, I, E>, &mut Emitter<E::Error>) -> U,
     {
         Validate {
             parser: self,
@@ -2021,7 +2040,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// This is most useful when wanting to convert literal values into their corresponding Rust type, such as when
     /// parsing integers.
     ///
-    /// The output type of this parser is `Result<U, U::Err>`, the result of attempting to parse the output, `O`, into
+    /// The output type of this parser is `Result<U, U::Err>`, the result of attempting to parse the output, `Output`, into
     /// the value `U`.
     ///
     /// # Examples
@@ -2036,11 +2055,13 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(uint64.parse("42").into_result(), Ok(42));
     /// ```
     #[allow(clippy::wrong_self_convention)]
-    fn from_str<U>(self) -> Map<Self, O, fn(O) -> Result<U, U::Err>>
+    fn from_str<U>(
+        self,
+    ) -> Map<Self, Self::Output, Result<U, U::Err>, fn(Self::Output) -> Result<U, U::Err>>
     where
         Self: Sized,
+        Self::Output: AsRef<str>,
         U: FromStr,
-        O: AsRef<str>,
     {
         self.map(|o| o.as_ref().parse())
     }
@@ -2070,7 +2091,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert!(boolean.parse("42").has_errors());
     /// ```
     #[track_caller]
-    fn unwrapped(self) -> Unwrapped<Self, O>
+    fn unwrapped(self) -> Unwrapped<Self, Self::Output>
     where
         Self: Sized,
     {
@@ -2104,10 +2125,10 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(set.parse("0, 1, 2, 3").unwrap(), [0, 1, 2, 3]);
     /// assert_eq!(set.parse("0..4").unwrap(), [0, 1, 2, 3]);
     /// ```
-    fn into_iter(self) -> IntoIter<Self, O>
+    fn into_iter(self) -> IntoIter<Self, Self::Output>
     where
         Self: Sized,
-        O: IntoIterator,
+        Self::Output: IntoIterator,
     {
         IntoIter {
             parser: self,
@@ -2132,7 +2153,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// Boxing a parser is broadly equivalent to boxing other combinators via dynamic dispatch, such as [`Iterator`].
     ///
-    /// The output type of this parser is `O`, the same as the original parser.
+    /// The output type of this parser is `Output`, the same as the original parser.
     ///
     /// # Examples
     ///
@@ -2142,7 +2163,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// # use chumsky::prelude::*;
     ///
     /// pub trait Parseable: Sized {
-    ///     type Parser<'src>: Parser<'src, &'src str, Self>;
+    ///     type Parser<'src>: Parser<'src, &'src str, Output = Self>;
     ///
     ///     fn parser<'src>() -> Self::Parser<'src>;
     /// }
@@ -2160,7 +2181,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// ```compile_fail
     /// # use chumsky::prelude::*;
-    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, char>> { [just('b')] }
+    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, Output = char>> { [just('b')] }
     ///
     /// let user_input = user_input();
     ///
@@ -2192,7 +2213,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// ```
     /// # use chumsky::prelude::*;
-    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, char>> { [just('b'), just('c')] }
+    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, Output = char>> { [just('b'), just('c')] }
     /// let user_input = user_input();
     /// let mut parser = just('a').boxed();
     /// for i in user_input {
@@ -2203,7 +2224,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// parser.parse("az").into_result().unwrap();
     /// ```
     ///
-    fn boxed<'b>(self) -> Boxed<'src, 'b, I, O, E>
+    fn boxed<'b>(self) -> Boxed<'src, 'b, I, Self::Output, E>
     where
         Self: Sized + 'src + 'b,
     {
@@ -2217,7 +2238,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// The only reason for using this function is to make Rust's compiler errors easier to debug: it does not change
     /// the behaviour of the parser at all, and is in fact just a simple identity function.
     #[cfg(feature = "nightly")]
-    fn simplify(self) -> impl Parser<'src, I, O, E>
+    fn simplify(self) -> impl Parser<'src, I, E, Output = Self::Output>
     where
         Self: Sized + 'src,
     {
@@ -2304,16 +2325,18 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 }
 
 #[cfg(feature = "nightly")]
-impl<'src, I, O, E> Parser<'src, I, O, E> for !
+impl<'src, I, E> Parser<'src, I, E> for !
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
-    fn go<M: Mode>(&self, _inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    type Output = !;
+
+    fn go<M: Mode>(&self, _inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         *self
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// A [`Parser`] that can be configured with runtime context.
@@ -2332,7 +2355,7 @@ where
 ///
 /// Not all parsers currently support configuration. If you feel like you need a parser to be configurable
 /// and it isn't currently, please open an issue on the issue tracker of the main repository.
-pub trait ConfigParser<'src, I, O, E>: Parser<'src, I, O, E>
+pub trait ConfigParser<'src, I, E>: Parser<'src, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2345,7 +2368,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<M, O>;
+    ) -> PResult<M, Self::Output>;
 
     #[doc(hidden)]
     #[inline(always)]
@@ -2353,7 +2376,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<Emit, O> {
+    ) -> PResult<Emit, Self::Output> {
         self.go_cfg::<Emit>(inp, cfg)
     }
     #[doc(hidden)]
@@ -2362,7 +2385,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<Check, O> {
+    ) -> PResult<Check, Self::Output> {
         self.go_cfg::<Check>(inp, cfg)
     }
 
@@ -2415,7 +2438,7 @@ where
 pub struct ParserIter<
     'src,
     'iter,
-    P: IterParser<'src, I, O, E>,
+    P: IterParser<'src, I, E, Item = O>,
     I: Input<'src>,
     O,
     E: ParserExtra<'src, I>,
@@ -2428,12 +2451,13 @@ pub struct ParserIter<
 }
 
 #[cfg(test)]
-impl<'src, P, I: Input<'src>, O, E: ParserExtra<'src, I>> Iterator
-    for ParserIter<'src, '_, P, I, O, E>
+impl<'src, I, E, P> Iterator for ParserIter<'src, '_, P, I, P::Item, E>
 where
-    P: IterParser<'src, I, O, E>,
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    P: IterParser<'src, I, E>,
 {
-    type Item = O;
+    type Item = P::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut inp = self.own.as_ref_start();
@@ -2456,11 +2480,14 @@ where
 }
 
 /// An iterable equivalent of [`Parser`], i.e: a parser that generates a sequence of outputs.
-pub trait IterParser<'src, I, O, E = extra::Default>
+pub trait IterParser<'src, I, E = extra::Default>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    /// An output of each separate iteration of the parser.
+    type Item;
+
     #[doc(hidden)]
     type IterState<M: Mode>
     where
@@ -2480,7 +2507,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
-    ) -> IPResult<M, O>;
+    ) -> IPResult<M, Self::Item>;
 
     /// Collect this iterable parser into a [`Container`].
     ///
@@ -2500,7 +2527,7 @@ where
     /// assert_eq!(word.parse("hello").into_result(), Ok("hello".to_string()));
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn collect<C: Container<O>>(self) -> Collect<Self, O, C>
+    fn collect<C: Container<Self::Item>>(self) -> Collect<Self, Self::Item, C>
     where
         Self: Sized,
     {
@@ -2531,7 +2558,7 @@ where
     /// assert!(three_digit.parse("12").into_result().is_err());
     /// assert!(three_digit.parse("1234").into_result().is_err());
     /// ```
-    fn collect_exactly<C: ContainerExactly<O>>(self) -> CollectExactly<Self, O, C>
+    fn collect_exactly<C: ContainerExactly<Self::Item>>(self) -> CollectExactly<Self, Self::Item, C>
     where
         Self: Sized,
     {
@@ -2557,7 +2584,7 @@ where
     /// assert_eq!(squares.parse("e5 e7 c6 c7 f6 d5 e6 d7 e4 c5 d6 c4 b6 f5").into_result(), Ok(14));
     /// assert_eq!(squares.parse("").into_result(), Ok(0));
     /// ```
-    fn count(self) -> Collect<Self, O, usize>
+    fn count(self) -> Collect<Self, Self::Item, usize>
     where
         Self: Sized,
     {
@@ -2582,7 +2609,7 @@ where
     ///
     /// assert_eq!(word.parse("hello world").into_result(), Ok(vec![(0, "hello"), (1, "world")]));
     /// ```
-    fn enumerate(self) -> Enumerate<Self, O>
+    fn enumerate(self) -> Enumerate<Self, Self::Item>
     where
         Self: Sized,
     {
@@ -2617,10 +2644,10 @@ where
     /// assert_eq!(signed.parse("--+-+-5").into_result(), Ok(5));
     /// ```
     #[cfg_attr(debug_assertions, track_caller)]
-    fn foldr<B, F, OA>(self, other: B, f: F) -> Foldr<F, Self, B, O, E>
+    fn foldr<B, F, OB>(self, other: B, f: F) -> Foldr<F, Self, B, Self::Item, E>
     where
-        F: Fn(O, OA) -> OA,
-        B: Parser<'src, I, OA, E>,
+        F: Fn(Self::Item, B::Output) -> B::Output,
+        B: Parser<'src, I, E, Output = OB>,
         Self: Sized,
     {
         Foldr {
@@ -2665,11 +2692,11 @@ where
     ///
     ///
     #[cfg_attr(debug_assertions, track_caller)]
-    fn foldr_with<B, F, OA>(self, other: B, f: F) -> FoldrWith<F, Self, B, O, E>
+    fn foldr_with<B, F, OB>(self, other: B, f: F) -> FoldrWith<F, Self, B, Self::Item, E>
     where
-        F: Fn(O, OA, &mut MapExtra<'src, '_, I, E>) -> OA,
-        B: Parser<'src, I, OA, E>,
         Self: Sized,
+        B: Parser<'src, I, E, Output = OB>,
+        F: Fn(Self::Item, B::Output, &mut MapExtra<'src, '_, I, E>) -> B::Output,
     {
         FoldrWith {
             parser_a: self,
@@ -2683,10 +2710,10 @@ where
 
     /// TODO
     #[cfg(feature = "nightly")]
-    fn flatten(self) -> Flatten<Self, O>
+    fn flatten(self) -> Flatten<Self, Self::Item>
     where
-        O: IntoIterator,
         Self: Sized,
+        Self::Item: IntoIterator,
     {
         Flatten {
             parser: self,
@@ -2699,9 +2726,12 @@ where
     /// Warning: Trailing errors will be ignored
     // TODO: Stabilize once error handling is properly decided on
     #[cfg(test)]
-    fn parse_iter(self, input: I) -> ParseResult<ParserIter<'src, 'static, Self, I, O, E>, E::Error>
+    fn parse_iter(
+        self,
+        input: I,
+    ) -> ParseResult<ParserIter<'src, 'static, Self, I, Self::Item, E>, E::Error>
     where
-        Self: IterParser<'src, I, O, E> + Sized,
+        Self: IterParser<'src, I, E> + Sized,
         E::State: Default,
         E::Context: Default,
     {
@@ -2725,9 +2755,9 @@ where
         self,
         input: I,
         state: &'parse mut E::State,
-    ) -> ParseResult<ParserIter<'src, 'parse, Self, I, O, E>, E::Error>
+    ) -> ParseResult<ParserIter<'src, 'parse, Self, I, Self::Item, E>, E::Error>
     where
-        Self: IterParser<'src, I, O, E> + Sized,
+        Self: IterParser<'src, I, E> + Sized,
         E::Context: Default,
     {
         ParseResult::new(
@@ -2744,7 +2774,7 @@ where
 
 /// An iterable equivalent of [`ConfigParser`], i.e: a parser that generates a sequence of outputs and
 /// can be configured at runtime.
-pub trait ConfigIterParser<'src, I, O, E = extra::Default>: IterParser<'src, I, O, E>
+pub trait ConfigIterParser<'src, I, E = extra::Default>: IterParser<'src, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2758,10 +2788,10 @@ where
         inp: &mut InputRef<'src, '_, I, E>,
         state: &mut Self::IterState<M>,
         cfg: &Self::Config,
-    ) -> IPResult<M, O>;
+    ) -> IPResult<M, Self::Item>;
 
     /// A combinator that allows configuration of the parser from the current context
-    fn configure<F>(self, cfg: F) -> IterConfigure<Self, F, O>
+    fn configure<F>(self, cfg: F) -> IterConfigure<Self, F, Self::Item>
     where
         Self: Sized,
         F: Fn(Self::Config, &E::Context) -> Self::Config,
@@ -2775,7 +2805,7 @@ where
 
     /// A combinator that allows fallible configuration of the parser from the current context -
     /// if an error is returned, parsing fails.
-    fn try_configure<F>(self, cfg: F) -> TryIterConfigure<Self, F, O>
+    fn try_configure<F>(self, cfg: F) -> TryIterConfigure<Self, F, Self::Item>
     where
         Self: Sized,
         F: Fn(Self::Config, &E::Context, I::Span) -> Result<Self::Config, E::Error>,
@@ -2806,13 +2836,15 @@ impl<'src, I: Input<'src>, O, E: ParserExtra<'src, I>> Clone for Boxed<'src, '_,
     }
 }
 
-impl<'src, I, O, E> Parser<'src, I, O, E> for Boxed<'src, '_, I, O, E>
+impl<'src, I, O, E> Parser<'src, I, E> for Boxed<'src, '_, I, O, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = O;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         M::invoke(&*self.inner, inp)
     }
 
@@ -2824,58 +2856,64 @@ where
         self
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, T> Parser<'src, I, O, E> for ::alloc::boxed::Box<T>
+impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::boxed::Box<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, O, E>,
+    T: Parser<'src, I, E>,
 {
+    type Output = T::Output;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
         T::go::<M>(self, inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, T> Parser<'src, I, O, E> for ::alloc::rc::Rc<T>
+impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::rc::Rc<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, O, E>,
+    T: Parser<'src, I, E>,
 {
+    type Output = T::Output;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
         T::go::<M>(self, inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E, T> Parser<'src, I, O, E> for ::alloc::sync::Arc<T>
+impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::sync::Arc<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, O, E>,
+    T: Parser<'src, I, E>,
 {
+    type Output = T::Output;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
         T::go::<M>(self, inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// Create a parser that selects one or more input patterns and map them to an output value.
@@ -3033,7 +3071,7 @@ mod tests {
         type Span = SimpleSpan<usize, FileId>;
 
         fn parser<'src>(
-        ) -> impl Parser<'src, WithContext<Span, &'src str>, [(Span, Token<'src>); 6]> {
+        ) -> impl Parser<'src, WithContext<Span, &'src str>, Output = [(Span, Token<'src>); 6]> {
             let ident = any()
                 .filter(|c: &char| c.is_alphanumeric())
                 .repeated()
@@ -3086,7 +3124,7 @@ mod tests {
         type FileId<'src> = &'src str;
         type Span<'src> = SimpleSpan<usize, FileId<'src>>;
 
-        fn parser<'src, I>() -> impl Parser<'src, I, [(Span<'src>, Token<'src>); 6]>
+        fn parser<'src, I>() -> impl Parser<'src, I, Output = [(Span<'src>, Token<'src>); 6]>
         where
             I: ValueInput<'src, Token = char, Span = Span<'src>>
                 + SliceInput<'src, Slice = &'src str>,
@@ -3137,7 +3175,7 @@ mod tests {
     fn zero_copy_repetition() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
             any()
                 .filter(|c: &char| c.is_ascii_digit())
                 .repeated()
@@ -3174,7 +3212,7 @@ mod tests {
     fn zero_copy_group() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, (&'src str, u64, char)> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = (&'src str, u64, char)> {
             group((
                 any()
                     .filter(|c: &char| c.is_ascii_alphabetic())
@@ -3215,7 +3253,7 @@ mod tests {
     fn zero_copy_group_array() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, [char; 3]> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = [char; 3]> {
             group([just('a'), just('b'), just('c')])
         }
 
@@ -3236,7 +3274,7 @@ mod tests {
     fn iter() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl IterParser<'src, &'src str, char> {
+        fn parser<'src>() -> impl IterParser<'src, &'src str, Item = char> {
             any().repeated()
         }
 
@@ -3253,7 +3291,7 @@ mod tests {
     fn exponential() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, String> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
             recursive(|expr| {
                 let atom = any()
                     .filter(|c: &char| c.is_alphabetic())
@@ -3283,7 +3321,7 @@ mod tests {
     fn left_recursive() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, String> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
             recursive(|expr| {
                 let atom = any()
                     .filter(|c: &char| c.is_alphabetic())
@@ -3462,7 +3500,7 @@ mod tests {
 
     #[test]
     fn box_impl() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
             Box::new(
                 any()
                     .filter(|c: &char| c.is_ascii_digit())
@@ -3497,7 +3535,7 @@ mod tests {
     fn rc_impl() {
         use alloc::rc::Rc;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
             Rc::new(
                 any()
                     .filter(|c: &char| c.is_ascii_digit())
@@ -3557,7 +3595,7 @@ mod tests {
     #[test]
     fn err_prio_0() {
         #[allow(dead_code)]
-        fn always_err<'src>() -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
+        fn always_err<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()> {
             empty().try_map(|_, _| Err(MyErr("special")))
         }
 
@@ -3570,7 +3608,8 @@ mod tests {
     #[test]
     fn err_prio_1() {
         #[allow(dead_code)]
-        fn always_err_choice<'src>() -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
+        fn always_err_choice<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()>
+        {
             choice((just("something").ignored(), empty())).try_map(|_, _| Err(MyErr("special")))
         }
 
@@ -3582,7 +3621,7 @@ mod tests {
 
     #[test]
     fn into_iter_no_error() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()> {
             let many_as = just('a')
                 .ignored()
                 .repeated()
@@ -3598,7 +3637,7 @@ mod tests {
     #[cfg(feature = "nightly")]
     #[test]
     fn flatten() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<char>, extra::Err<MyErr>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = Vec<char>> {
             let many_as = just('a')
                 .map(Some)
                 .or(any().to(None))
@@ -3617,7 +3656,7 @@ mod tests {
 
     #[test]
     fn iterable_then() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<char>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<char>> {
             just('a')
                 .map(Some)
                 .into_iter()
@@ -3637,7 +3676,7 @@ mod tests {
     #[test]
     #[cfg(feature = "unstable")]
     fn cached() {
-        fn my_parser<'src>() -> impl Parser<'src, &'src str, &'src str, extra::Default> {
+        fn my_parser<'src>() -> impl Parser<'src, &'src str, extra::Default, Output = &'src str> {
             any().repeated().exactly(5).to_slice()
         }
 
@@ -3682,7 +3721,7 @@ mod tests {
         enum Token {}
         enum Expr {}
 
-        fn expr<'src, I>() -> impl Parser<'src, I, (Expr, SimpleSpan)> + 'src
+        fn expr<'src, I>() -> impl Parser<'src, I, Output = (Expr, SimpleSpan)> + 'src
         where
             I: Input<'src, Token = Token, Span = SimpleSpan> + 'src,
         {
@@ -3694,7 +3733,7 @@ mod tests {
     fn label() {
         use crate::label::LabelError;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()> {
             just("hello").labelled("greeting").as_context().ignored()
         }
 
@@ -3714,7 +3753,7 @@ mod tests {
         <Rich<_, _> as LabelError<&str, _>>::in_context(&mut err, "greeting", (0..3).into());
         assert_eq!(parser().parse("help").into_errors(), vec![err]);
 
-        fn parser2<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
+        fn parser2<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()> {
             text::keyword("hello")
                 .labelled("greeting")
                 .as_context()
@@ -3732,7 +3771,7 @@ mod tests {
     fn invalid_escape() {
         use crate::LabelError;
 
-        fn string<'src>() -> impl Parser<'src, &'src str, &'src str, extra::Err<Rich<'src, char>>> {
+        fn string<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = &'src str> {
             let quote = just("\"");
             let escaped = just("\\").then(just("n"));
             let unescaped = none_of("\\\"");
@@ -3762,7 +3801,7 @@ mod tests {
     fn map_err_missed_info() {
         use crate::LabelError;
 
-        fn zero<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
+        fn zero<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()> {
             just("-")
                 .or_not()
                 .then(just("0").map_err(move |e: Rich<_>| {
@@ -3814,7 +3853,7 @@ mod tests {
 
     #[test]
     fn zero_size_custom_failure() {
-        fn my_custom<'src>() -> impl Parser<'src, &'src str, ()> {
+        fn my_custom<'src>() -> impl Parser<'src, &'src str, Output = ()> {
             custom(|inp| {
                 let check = inp.save();
                 if inp.parse(just("foo")).is_err() {

@@ -20,7 +20,7 @@ enum Instr {
     Loop(Vec<Self>),
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Instr>, extra::Err<Simple<'a, char>>> {
+fn parser<'a>() -> impl Parser<'a, &'a str, extra::Err<Simple<'a, char>>, Output = Vec<Instr>> {
     use Instr::*;
     recursive(|bf| {
         choice((

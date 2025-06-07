@@ -127,7 +127,7 @@ mod chumsky_zero_copy {
     use std::str;
 
     pub fn json<'a, E: Error<'a, &'a [u8]> + 'a>(
-    ) -> impl Parser<'a, &'a [u8], JsonZero<'a>, extra::Err<E>> {
+    ) -> impl Parser<'a, &'a [u8], extra::Err<E>, Output = JsonZero<'a>> {
         recursive(|value| {
             let digits = one_of(b'0'..=b'9').repeated();
 

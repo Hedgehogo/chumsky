@@ -4,13 +4,13 @@ use super::*;
 use regex_automata::{meta, Anchored, Input as ReInput};
 
 /// See [`regex()`].
-pub struct Regex<I, E> {
+pub struct Regex<I, E, S> {
     regex: meta::Regex,
     #[allow(dead_code)]
-    phantom: EmptyPhantom<(E, I)>,
+    phantom: EmptyPhantom<(I, E, S)>,
 }
 
-impl<I, E> Clone for Regex<I, E> {
+impl<I, E, S> Clone for Regex<I, E, S> {
     fn clone(&self) -> Self {
         Self {
             regex: self.regex.clone(),
@@ -20,20 +20,22 @@ impl<I, E> Clone for Regex<I, E> {
 }
 
 /// Match input based on a provided regex pattern
-pub fn regex<I, E>(pattern: &str) -> Regex<I, E> {
+pub fn regex<'p, I, E, S: ?Sized + 'p>(pattern: &'p str) -> Regex<I, E, &'p S> {
     Regex {
         regex: meta::Regex::new(pattern).expect("Failed to compile regex"),
         phantom: EmptyPhantom::new(),
     }
 }
 
-impl<'src, S, I, E> Parser<'src, I, &'src S, E> for Regex<I, E>
+impl<'src, 'p, I, E, S> Parser<'src, I, E> for Regex<I, E, &'p S>
 where
     I: StrInput<'src, Slice = &'src S>,
     I::Token: Char,
-    S: ?Sized + AsRef<[u8]> + 'src,
     E: ParserExtra<'src, I>,
+    S: ?Sized + AsRef<[u8]> + 'src,
 {
+    type Output = &'src S;
+
     #[inline]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, &'src S> {
         let before = inp.cursor();
@@ -63,7 +65,7 @@ where
         }
     }
 
-    go_extra!(&'src S);
+    go_extra!(Self::Output);
 }
 
 #[cfg(test)]
@@ -75,7 +77,7 @@ mod tests {
         use self::prelude::*;
         use self::regex::*;
 
-        fn parser<'src, S, I>() -> impl Parser<'src, I, Vec<&'src S>>
+        fn parser<'src, S, I>() -> impl Parser<'src, I, Output = Vec<&'src S>>
         where
             S: ?Sized + AsRef<[u8]> + 'src,
             I: StrInput<'src, Slice = &'src S>,

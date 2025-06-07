@@ -4,17 +4,19 @@
 use super::*;
 use ::either::Either;
 
-impl<'src, L, R, I, O, E> Parser<'src, I, O, E> for Either<L, R>
+impl<'src, L, R, I, E> Parser<'src, I, E> for Either<L, R>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    L: Parser<'src, I, O, E>,
-    R: Parser<'src, I, O, E>,
+    L: Parser<'src, I, E>,
+    R: Parser<'src, I, E, Output = L::Output>,
 {
+    type Output = L::Output;
+
     fn go<M: crate::private::Mode>(
         &self,
         inp: &mut crate::input::InputRef<'src, '_, I, E>,
-    ) -> crate::private::PResult<M, O>
+    ) -> crate::private::PResult<M, Self::Output>
     where
         Self: Sized,
     {
@@ -24,7 +26,7 @@ where
         }
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 #[cfg(test)]
@@ -35,7 +37,7 @@ mod tests {
     };
     use either::Either;
 
-    fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
+    fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
         any()
             .filter(|c: &char| c.is_ascii_digit())
             .repeated()

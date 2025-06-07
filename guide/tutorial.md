@@ -125,10 +125,10 @@ Expr::Let {
 The purpose of our parser will be to perform this conversion, from source code to AST.
 
 We're also going to create a function that creates Foo's parser. Our parser takes in a `&str` (a string slice) and
-produces an `Expr`, so we'll use those types for the `I` (input) and `O` (output) type parameters.
+produces an `Expr`, so we'll use those types for the parameter type `I` (input) and the associated type `Output` (output).
 
 ```rust ignore
-fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
+fn parser<'src>() -> impl Parser<'src, &'src str, Output = Expr<'src>> {
     // To be filled in later...
 }
 ```

@@ -1,24 +1,26 @@
 use super::*;
 
-impl<'src, T, I, O, E> Parser<'src, I, O, E> for &T
+impl<'src, T, I, E> Parser<'src, I, E> for &T
 where
-    T: ?Sized + Parser<'src, I, O, E>,
+    T: ?Sized + Parser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O>
+    type Output = T::Output;
+
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output>
     where
         Self: Sized,
     {
         M::invoke(*self, inp)
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, T, I, O, E> ConfigParser<'src, I, O, E> for &T
+impl<'src, T, I, E> ConfigParser<'src, I, E> for &T
 where
-    T: ?Sized + ConfigParser<'src, I, O, E>,
+    T: ?Sized + ConfigParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -28,7 +30,7 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<M, O> {
+    ) -> PResult<M, Self::Output> {
         M::invoke_cfg(*self, inp, cfg)
     }
 }

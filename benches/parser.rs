@@ -31,7 +31,7 @@ fn bench_choice(c: &mut Criterion) {
         just('X'),
         just('Y'),
         just('Z'),
-    ));
+    )).boxed();
 
     let mut group = c.benchmark_group("choice");
 
@@ -62,31 +62,31 @@ fn bench_choice(c: &mut Criterion) {
 
 fn bench_or(c: &mut Criterion) {
     let alphabet_or = just::<_, _, extra::Default>('A')
-        .or(just('B'))
-        .or(just('C'))
-        .or(just('D'))
-        .or(just('E'))
-        .or(just('F'))
-        .or(just('G'))
-        .or(just('H'))
-        .or(just('I'))
-        .or(just('J'))
-        .or(just('K'))
-        .or(just('L'))
-        .or(just('M'))
-        .or(just('N'))
-        .or(just('O'))
-        .or(just('P'))
-        .or(just('Q'))
-        .or(just('R'))
-        .or(just('S'))
-        .or(just('T'))
-        .or(just('U'))
-        .or(just('V'))
-        .or(just('W'))
-        .or(just('X'))
-        .or(just('Y'))
-        .or(just('Z'));
+        .or(just('B')).boxed()
+        .or(just('C')).boxed()
+        .or(just('D')).boxed()
+        .or(just('E')).boxed()
+        .or(just('F')).boxed()
+        .or(just('G')).boxed()
+        .or(just('H')).boxed()
+        .or(just('I')).boxed()
+        .or(just('J')).boxed()
+        .or(just('K')).boxed()
+        .or(just('L')).boxed()
+        .or(just('M')).boxed()
+        .or(just('N')).boxed()
+        .or(just('O')).boxed()
+        .or(just('P')).boxed()
+        .or(just('Q')).boxed()
+        .or(just('R')).boxed()
+        .or(just('S')).boxed()
+        .or(just('T')).boxed()
+        .or(just('U')).boxed()
+        .or(just('V')).boxed()
+        .or(just('W')).boxed()
+        .or(just('X')).boxed()
+        .or(just('Y')).boxed()
+        .or(just('Z')).boxed();
 
     let mut group = c.benchmark_group("or");
 
@@ -143,7 +143,7 @@ fn bench_group(c: &mut Criterion) {
         just('X'),
         just('Y'),
         just('Z'),
-    ));
+    )).boxed();
 
     let mut group = c.benchmark_group("group");
 
@@ -182,31 +182,31 @@ fn bench_group(c: &mut Criterion) {
 
 fn bench_then(c: &mut Criterion) {
     let alphabet_then = just::<_, _, extra::Default>('A')
-        .then(just('B'))
-        .then(just('C'))
-        .then(just('D'))
-        .then(just('E'))
-        .then(just('F'))
-        .then(just('G'))
-        .then(just('H'))
-        .then(just('I'))
-        .then(just('J'))
-        .then(just('K'))
-        .then(just('L'))
-        .then(just('M'))
-        .then(just('N'))
-        .then(just('O'))
-        .then(just('P'))
-        .then(just('Q'))
-        .then(just('R'))
-        .then(just('S'))
-        .then(just('T'))
-        .then(just('U'))
-        .then(just('V'))
-        .then(just('W'))
-        .then(just('X'))
-        .then(just('Y'))
-        .then(just('Z'));
+        .then(just('B')).boxed()
+        .then(just('C')).boxed()
+        .then(just('D')).boxed()
+        .then(just('E')).boxed()
+        .then(just('F')).boxed()
+        .then(just('G')).boxed()
+        .then(just('H')).boxed()
+        .then(just('I')).boxed()
+        .then(just('J')).boxed()
+        .then(just('K')).boxed()
+        .then(just('L')).boxed()
+        .then(just('M')).boxed()
+        .then(just('N')).boxed()
+        .then(just('O')).boxed()
+        .then(just('P')).boxed()
+        .then(just('Q')).boxed()
+        .then(just('R')).boxed()
+        .then(just('S')).boxed()
+        .then(just('T')).boxed()
+        .then(just('U')).boxed()
+        .then(just('V')).boxed()
+        .then(just('W')).boxed()
+        .then(just('X')).boxed()
+        .then(just('Y')).boxed()
+        .then(just('Z')).boxed();
 
     let mut group = c.benchmark_group("then");
 
@@ -245,9 +245,9 @@ fn bench_then(c: &mut Criterion) {
 
 #[cfg(feature = "regex")]
 fn bench_regex(c: &mut Criterion) {
-    let re_foo = regex::<_, extra::Default>("foo");
-    let re_foo2 = regex::<_, extra::Default>("[fF]oo");
-    let re_rep = regex::<_, extra::Default>("(?:abc){4}");
+    let re_foo = regex::<_, extra::Default>("foo").boxed();
+    let re_foo2 = regex::<_, extra::Default>("[fF]oo").boxed();
+    let re_rep = regex::<_, extra::Default>("(?:abc){4}").boxed();
 
     let mut group = c.benchmark_group("regex");
 

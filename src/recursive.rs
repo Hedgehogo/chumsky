@@ -109,7 +109,7 @@ impl<'src, 'b, I: Input<'src>, O, E: ParserExtra<'src, I>> Recursive<Indirect<'s
     /// Defines the parser after declaring it, allowing it to be used for parsing.
     // INFO: Clone bound not actually needed, but good to be safe for future compat
     #[track_caller]
-    pub fn define<P: Parser<'src, I, O, E> + Clone + 'src + 'b>(&mut self, parser: P) {
+    pub fn define<P: Parser<'src, I, E, Output = O> + Clone + 'src + 'b>(&mut self, parser: P) {
         let location = *Location::caller();
         self.parser()
             .inner
@@ -154,13 +154,15 @@ pub(crate) fn recurse<R, F: FnOnce() -> R>(f: F) -> R {
     f()
 }
 
-impl<'src, I, O, E> Parser<'src, I, O, E> for Recursive<Indirect<'src, '_, I, O, E>>
+impl<'src, I, E, O> Parser<'src, I, E> for Recursive<Indirect<'src, '_, I, O, E>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = O;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         recurse(move || {
             M::invoke(
                 self.parser()
@@ -173,20 +175,22 @@ where
         })
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
-impl<'src, I, O, E> Parser<'src, I, O, E> for Recursive<Direct<'src, '_, I, O, E>>
+impl<'src, I, E, O> Parser<'src, I, E> for Recursive<Direct<'src, '_, I, O, E>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
+    type Output = O;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         recurse(move || M::invoke(&*self.parser(), inp))
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }
 
 /// Construct a recursive parser (i.e: a parser that may contain itself as part of its pattern).
@@ -195,7 +199,7 @@ where
 ///
 /// This is a wrapper around [`Recursive::declare`] and [`Recursive::define`].
 ///
-/// The output type of this parser is `O`, the same as the inner parser.
+/// The output type of this parser is `Output`, the same as the inner parser.
 ///
 /// # Examples
 ///
@@ -243,7 +247,7 @@ pub fn recursive<'src, 'b, I, O, E, A, F>(f: F) -> Recursive<Direct<'src, 'b, I,
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E> + Clone + 'b,
+    A: Parser<'src, I, E, Output = O> + Clone + 'b,
     F: FnOnce(Recursive<Direct<'src, 'b, I, O, E>>) -> A,
 {
     let rc = Rc::new_cyclic(|rc| {

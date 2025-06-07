@@ -78,16 +78,18 @@ impl<A, L> Labelled<A, L> {
     }
 }
 
-impl<'src, I, O, E, A, L> Parser<'src, I, O, E> for Labelled<A, L>
+impl<'src, I, E, A, L> Parser<'src, I, E> for Labelled<A, L>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, O, E>,
+    A: Parser<'src, I, E>,
     L: Clone,
     E::Error: LabelError<'src, I, L>,
 {
+    type Output = A::Output;
+
     #[inline]
-    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
         let old_alt = inp.errors.alt.take();
         let before = inp.save();
         let res = self.parser.go::<M>(inp);
@@ -120,5 +122,5 @@ where
         res
     }
 
-    go_extra!(O);
+    go_extra!(Self::Output);
 }

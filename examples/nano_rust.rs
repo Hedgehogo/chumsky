@@ -47,30 +47,30 @@ impl fmt::Display for Token<'_> {
 }
 
 fn lexer<'src>(
-) -> impl Parser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char, Span>>> {
+) -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char, Span>>, Output = Vec<Spanned<Token<'src>>>> {
     // A parser for numbers
     let num = text::int(10)
         .then(just('.').then(text::digits(10)).or_not())
         .to_slice()
         .from_str()
         .unwrapped()
-        .map(Token::Num);
+        .map(Token::Num).boxed();
 
     // A parser for strings
     let str_ = just('"')
         .ignore_then(none_of('"').repeated().to_slice())
         .then_ignore(just('"'))
-        .map(Token::Str);
+        .map(Token::Str).boxed();
 
     // A parser for operators
     let op = one_of("+*-/!=")
         .repeated()
         .at_least(1)
         .to_slice()
-        .map(Token::Op);
+        .map(Token::Op).boxed();
 
     // A parser for control characters (delimiters, semicolons, etc.)
-    let ctrl = one_of("()[]{};,").map(Token::Ctrl);
+    let ctrl = one_of("()[]{};,").map(Token::Ctrl).boxed();
 
     // A parser for identifiers and keywords
     let ident = text::ascii::ident().map(|ident: &str| match ident {
@@ -86,7 +86,7 @@ fn lexer<'src>(
     });
 
     // A single token can be one of the above
-    let token = num.or(str_).or(op).or(ctrl).or(ident);
+    let token = num.or(str_).or(op).or(ctrl).or(ident).boxed();
 
     let comment = just("//")
         .then(any().and_is(just('\n').not()).repeated())
@@ -99,7 +99,7 @@ fn lexer<'src>(
         // If we encounter an error, skip and attempt to lex the next character as a token instead
         .recover_with(skip_then_retry_until(any().ignored(), end()))
         .repeated()
-        .collect()
+        .collect().boxed()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -179,7 +179,7 @@ struct Func<'src> {
 }
 
 fn expr_parser<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, Spanned<Expr<'src>>, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+) -> impl Parser<'tokens, I, extra::Err<Rich<'tokens, Token<'src>, Span>>, Output = Spanned<Expr<'src>>> + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
@@ -191,7 +191,7 @@ where
                 Token::Num(n) => Expr::Value(Value::Num(n)),
                 Token::Str(s) => Expr::Value(Value::Str(s)),
             }
-            .labelled("value");
+            .labelled("value").boxed();
 
             let ident = select! { Token::Ident(ident) => ident }.labelled("identifier");
 
@@ -200,7 +200,7 @@ where
                 .clone()
                 .separated_by(just(Token::Ctrl(',')))
                 .allow_trailing()
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>().boxed();
 
             // A let expression
             let let_ = just(Token::Let)
@@ -209,12 +209,12 @@ where
                 .then(inline_expr)
                 .then_ignore(just(Token::Ctrl(';')))
                 .then(expr.clone())
-                .map(|((name, val), body)| Expr::Let(name, Box::new(val), Box::new(body)));
+                .map(|((name, val), body)| Expr::Let(name, Box::new(val), Box::new(body))).boxed();
 
             let list = items
                 .clone()
                 .map(Expr::List)
-                .delimited_by(just(Token::Ctrl('[')), just(Token::Ctrl(']')));
+                .delimited_by(just(Token::Ctrl('[')), just(Token::Ctrl(']'))).boxed();
 
             // 'Atoms' are expressions that contain no ambiguity
             let atom = val
@@ -228,11 +228,12 @@ where
                             .delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))),
                     )
                     .map(|expr| Expr::Print(Box::new(expr))))
-                .map_with(|expr, e| (expr, e.span()))
+                .map_with(|expr, e| (expr, e.span())).boxed()
                 // Atoms can also just be normal expressions, but surrounded with parentheses
                 .or(expr
                     .clone()
                     .delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
+                .boxed()
                 // Attempt to recover anything that looks like a parenthesised expression but contains errors
                 .recover_with(via_parser(nested_delimiters(
                     Token::Ctrl('('),
@@ -242,7 +243,7 @@ where
                         (Token::Ctrl('{'), Token::Ctrl('}')),
                     ],
                     |span| (Expr::Error, span),
-                )))
+                ).boxed()))
                 // Attempt to recover anything that looks like a list but contains errors
                 .recover_with(via_parser(nested_delimiters(
                     Token::Ctrl('['),
@@ -252,7 +253,7 @@ where
                         (Token::Ctrl('{'), Token::Ctrl('}')),
                     ],
                     |span| (Expr::Error, span),
-                )))
+                ).boxed()))
                 .boxed();
 
             // Function calls have very high precedence so we prioritise them
@@ -262,37 +263,37 @@ where
                     .map_with(|args, e| (args, e.span()))
                     .repeated(),
                 |f, args, e| (Expr::Call(Box::new(f), args), e.span()),
-            );
+            ).boxed();
 
             // Product ops (multiply and divide) have equal precedence
             let op = just(Token::Op("*"))
                 .to(BinaryOp::Mul)
-                .or(just(Token::Op("/")).to(BinaryOp::Div));
+                .or(just(Token::Op("/")).to(BinaryOp::Div)).boxed();
             let product = call
                 .clone()
                 .foldl_with(op.then(call).repeated(), |a, (op, b), e| {
                     (Expr::Binary(Box::new(a), op, Box::new(b)), e.span())
-                });
+                }).boxed();
 
             // Sum ops (add and subtract) have equal precedence
             let op = just(Token::Op("+"))
                 .to(BinaryOp::Add)
-                .or(just(Token::Op("-")).to(BinaryOp::Sub));
+                .or(just(Token::Op("-")).to(BinaryOp::Sub)).boxed();
             let sum = product
                 .clone()
                 .foldl_with(op.then(product).repeated(), |a, (op, b), e| {
                     (Expr::Binary(Box::new(a), op, Box::new(b)), e.span())
-                });
+                }).boxed();
 
             // Comparison ops (equal, not-equal) have equal precedence
             let op = just(Token::Op("=="))
                 .to(BinaryOp::Eq)
-                .or(just(Token::Op("!=")).to(BinaryOp::NotEq));
+                .or(just(Token::Op("!=")).to(BinaryOp::NotEq)).boxed();
             let compare = sum
                 .clone()
                 .foldl_with(op.then(sum).repeated(), |a, (op, b), e| {
                     (Expr::Binary(Box::new(a), op, Box::new(b)), e.span())
-                });
+                }).boxed();
 
             compare.labelled("expression").as_context()
         });
@@ -310,7 +311,7 @@ where
                     (Token::Ctrl('['), Token::Ctrl(']')),
                 ],
                 |span| (Expr::Error, span),
-            )));
+            ).boxed())).boxed();
 
         let if_ = recursive(|if_| {
             just(Token::If)
@@ -332,16 +333,16 @@ where
                         e.span(),
                     )
                 })
-        });
+        }).boxed();
 
         // Both blocks and `if` are 'block expressions' and can appear in the place of statements
-        let block_expr = block.or(if_);
+        let block_expr = block.or(if_).boxed();
 
         let block_chain = block_expr
             .clone()
             .foldl_with(block_expr.clone().repeated(), |a, b, e| {
                 (Expr::Then(Box::new(a), Box::new(b)), e.span())
-            });
+            }).boxed();
 
         let block_recovery = nested_delimiters(
             Token::Ctrl('{'),
@@ -351,7 +352,7 @@ where
                 (Token::Ctrl('['), Token::Ctrl(']')),
             ],
             |span| (Expr::Error, span),
-        );
+        ).boxed();
 
         block_chain
             .labelled("block")
@@ -365,10 +366,10 @@ where
                     Token::Ctrl(')'),
                     Token::Ctrl(']'),
                 ])
-                .ignored(),
+                .ignored().boxed(),
             ))
             .foldl_with(
-                just(Token::Ctrl(';')).ignore_then(expr.or_not()).repeated(),
+                just(Token::Ctrl(';')).ignore_then(expr.or_not()).boxed().repeated(),
                 |a, b, e| {
                     let span: Span = e.span();
                     (
@@ -389,8 +390,8 @@ where
 fn funcs_parser<'tokens, 'src: 'tokens, I>() -> impl Parser<
     'tokens,
     I,
-    HashMap<&'src str, Func<'src>>,
     extra::Err<Rich<'tokens, Token<'src>, Span>>,
+    Output = HashMap<&'src str, Func<'src>>,
 > + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
@@ -403,7 +404,7 @@ where
         .allow_trailing()
         .collect()
         .delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')')))
-        .labelled("function args");
+        .labelled("function args").boxed();
 
     let func = just(Token::Fn)
         .ignore_then(
@@ -425,10 +426,10 @@ where
                         (Token::Ctrl('['), Token::Ctrl(']')),
                     ],
                     |span| (Expr::Error, span),
-                ))),
+                ).boxed())),
         )
         .map(|(((name, args), span), body)| (name, Func { args, span, body }))
-        .labelled("function");
+        .labelled("function").boxed();
 
     func.repeated()
         .collect::<Vec<_>>()
@@ -443,7 +444,7 @@ where
                 }
             }
             funcs
-        })
+        }).boxed()
 }
 
 struct Error {

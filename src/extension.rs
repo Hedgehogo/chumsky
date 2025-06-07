@@ -27,11 +27,13 @@
 //! pub struct Null_;
 //!
 //! // We implement `ExtParser` for our null byte parser, plugging us into the chumsky ecosystem
-//! impl<'src, I, E> ExtParser<'src, I, (), E> for Null_
+//! impl<'src, I, E> ExtParser<'src, I, E> for Null_
 //! where
 //!     I: Input<'src, Token = u8>,
 //!     E: extra::ParserExtra<'src, I>,
 //! {
+//!     type Output = ();
+//! 
 //!     fn parse(&self, inp: &mut InputRef<'src, '_, I, E>) -> Result<(), E::Error> {
 //!         let before = inp.cursor();
 //!         match inp.next_maybe().as_deref() {
@@ -59,7 +61,7 @@
 //! }
 //!
 //! // Let's give our parser a test!
-//! fn make_parser<'src>() -> impl Parser<'src, &'src [u8], ()> {
+//! fn make_parser<'src>() -> impl Parser<'src, &'src [u8], Output = ()> {
 //!     null()
 //! }
 //!
@@ -106,7 +108,7 @@ mod current {
     ///     fn frobnicated_with<B>(self, other: B) -> FrobnicatedWith<Self, B>
     ///     where
     ///         Self: Sized,
-    ///         B: Parser<'src, I, O, E>,
+    ///         B: Parser<'src, I, E, Output = O>,
     ///     {
     ///         FrobnicatedWith { a: self, b: other }
     ///     }
@@ -114,11 +116,14 @@ mod current {
     /// ```
     ///
     /// Now, users can import your trait and do `a.frobnicate_with(b)` as if your parser were native to chumsky!
-    pub trait ExtParser<'src, I: Input<'src>, O, E: ParserExtra<'src, I>> {
+    pub trait ExtParser<'src, I: Input<'src>, E: ParserExtra<'src, I>> {
+        /// This is the type of the value that your parser will eventually give you, assuming that parsing was successful.
+        type Output;
+
         /// Attempt parsing on the given input.
         ///
         /// See [`InputRef`] for more information about how you can work with parser inputs.
-        fn parse(&self, inp: &mut InputRef<'src, '_, I, E>) -> Result<O, E::Error>;
+        fn parse(&self, inp: &mut InputRef<'src, '_, I, E>) -> Result<Self::Output, E::Error>;
 
         /// Attempt to check the given input.
         ///
@@ -151,14 +156,16 @@ mod current {
     #[repr(transparent)]
     pub struct Ext<T: ?Sized>(pub T);
 
-    impl<'src, I, O, E, P> Parser<'src, I, O, E> for Ext<P>
+    impl<'src, I, E, P> Parser<'src, I, E> for Ext<P>
     where
         I: Input<'src>,
         E: ParserExtra<'src, I>,
-        P: ExtParser<'src, I, O, E>,
+        P: ExtParser<'src, I, E>,
     {
+        type Output = P::Output;
+
         #[inline(always)]
-        fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+        fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, Self::Output> {
             let before = inp.cursor();
             match M::choose(&mut *inp, |inp| self.0.parse(inp), |inp| self.0.check(inp)) {
                 Ok(out) => Ok(out),
@@ -169,6 +176,6 @@ mod current {
             }
         }
 
-        go_extra!(O);
+        go_extra!(Self::Output);
     }
 }

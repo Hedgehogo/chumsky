@@ -89,7 +89,7 @@ mod chumsky_zero_copy {
 
     type Error<'a> = EmptyErr;
 
-    pub fn cbor<'a>() -> impl Parser<'a, &'a [u8], CborZero<'a>, extra::Err<Error<'a>>> {
+    pub fn cbor<'a>() -> impl Parser<'a, &'a [u8], extra::Err<Error<'a>>, Output = CborZero<'a>> {
         recursive(|data| {
             let take = |n: u8| any().map(move |x| x % (1 << n));
             let int = |bytes| {
@@ -103,13 +103,13 @@ mod chumsky_zero_copy {
                 take(5).filter(|x| *x == 25).ignore_then(int(2)),
                 take(5).filter(|x| *x == 26).ignore_then(int(4)),
                 take(5).filter(|x| *x == 27).ignore_then(int(8)),
-            ));
+            )).boxed();
 
-            let uint = read_uint.map(|x| CborZero::Int(x.try_into().unwrap()));
-            let nint = read_uint.map(|x| CborZero::Int(-1 - i64::try_from(x).unwrap()));
+            let uint = read_uint.clone().map(|x| CborZero::Int(x.try_into().unwrap()));
+            let nint = read_uint.clone().map(|x| CborZero::Int(-1 - i64::try_from(x).unwrap()));
 
-            let length = read_uint.map(|x| usize::try_from(x).unwrap());
-            let bstr = length.ignore_with_ctx(
+            let length = read_uint.clone().map(|x| usize::try_from(x).unwrap());
+            let bstr = length.clone().ignore_with_ctx(
                 any()
                     .repeated()
                     .configure(|cfg, ctx| cfg.exactly(*ctx))
@@ -117,7 +117,7 @@ mod chumsky_zero_copy {
                     .map(CborZero::Bytes),
             );
 
-            let str = length.ignore_with_ctx(
+            let str = length.clone().ignore_with_ctx(
                 any()
                     .repeated()
                     .configure(|cfg, ctx| cfg.exactly(*ctx))
@@ -125,7 +125,7 @@ mod chumsky_zero_copy {
                     .map(|slice| CborZero::String(std::str::from_utf8(slice).unwrap())),
             );
 
-            let array = length.ignore_with_ctx(
+            let array = length.clone().ignore_with_ctx(
                 data.clone()
                     .with_ctx(())
                     .repeated()
@@ -165,7 +165,7 @@ mod chumsky_zero_copy {
                         .map(f64::from_be_bytes)
                         .map(CborZero::DoubleFloat),
                 ),
-            ));
+            )).boxed();
 
             recursive(|value| {
                 let major =
@@ -185,7 +185,7 @@ mod chumsky_zero_copy {
                     major(5, 3).ignore_then(map),
                     major(6, 3).ignore_then(tag),
                     major(7, 3).ignore_then(float_simple),
-                ))
+                )).boxed()
             })
         })
     }

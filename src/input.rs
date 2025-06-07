@@ -1540,7 +1540,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     /// parser may break in unexpected ways at any time.
     ///
     /// You have been warned.
-    pub fn parse<O, P: Parser<'src, I, O, E>>(&mut self, parser: P) -> Result<O, E::Error> {
+    pub fn parse<O, P: Parser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<O, E::Error> {
         match parser.go::<Emit>(self) {
             Ok(out) => Ok(out),
             // Can't fail!
@@ -1553,7 +1553,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     /// # Import Notice
     ///
     /// See [`InputRef::parse`] about unspecified behavior associated with this function.
-    pub fn check<O, P: Parser<'src, I, O, E>>(&mut self, parser: P) -> Result<(), E::Error> {
+    pub fn check<O, P: Parser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<(), E::Error> {
         match parser.go::<Check>(self) {
             Ok(()) => Ok(()),
             // Can't fail!

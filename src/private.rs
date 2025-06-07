@@ -61,7 +61,7 @@ pub trait Mode {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, O, E> + ?Sized;
+        P: Parser<'a, I, E, Output = O> + ?Sized;
 
     /// Invoke a parser with configuration using the current mode. This is normally equivalent
     /// to [`parser.go::<M>(inp)`](ConfigParser::go_cfg), but it can be called on unsized values
@@ -74,7 +74,7 @@ pub trait Mode {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: ConfigParser<'a, I, O, E> + ?Sized;
+        P: ConfigParser<'a, I, E, Output = O> + ?Sized;
 
     #[cfg(feature = "pratt")]
     fn invoke_pratt_op_prefix<'src, 'parse, Op, I, O, E>(
@@ -168,7 +168,7 @@ impl Mode for Emit {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, O, E> + ?Sized,
+        P: Parser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_emit(inp)
     }
@@ -182,7 +182,7 @@ impl Mode for Emit {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: ConfigParser<'a, I, O, E> + ?Sized,
+        P: ConfigParser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_emit_cfg(inp, cfg)
     }
@@ -279,7 +279,7 @@ impl Mode for Check {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, O, E> + ?Sized,
+        P: Parser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_check(inp)
     }
@@ -293,7 +293,7 @@ impl Mode for Check {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: ConfigParser<'a, I, O, E> + ?Sized,
+        P: ConfigParser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_check_cfg(inp, cfg)
     }

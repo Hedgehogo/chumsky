@@ -13,7 +13,7 @@
 //! #[derive(Default)]
 //! struct TokenParser;
 //! impl Cached for TokenParser {
-//!     type Parser<'a> = Arc<dyn Parser<'a, &'a str, Token<'a>, extra::Default> + Send + Sync + 'a>;
+//!     type Parser<'a> = Arc<dyn Parser<'a, &'a str, extra::Default, Output = Token<'a>> + Send + Sync + 'a>;
 //!
 //!     fn make_parser<'a>(self) -> Self::Parser<'a> {
 //!         let ident = text::ident().map(Token::Ident);
@@ -42,7 +42,7 @@ pub trait Cached {
     ///
     /// ```ignore
     /// Boxed<'src, 'src, &'src str, Token<'src>, extra::Default>
-    /// Arc<dyn Parser<'src, &'src str, Token<'src>, extra::Default> + Send + Sync + 'src>
+    /// Arc<dyn Parser<'src, &'src str, extra::Default, Output = Token<'src>> + Send + Sync + 'src>
     /// ```
     type Parser<'src>;
 
