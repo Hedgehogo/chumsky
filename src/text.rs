@@ -253,7 +253,7 @@ where
 /// // ...including none at all!
 /// assert_eq!(whitespace.parse("").into_result(), Ok(()));
 /// ```
-pub fn whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, (), I, E>
+pub fn whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, I, E, ()>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -294,7 +294,7 @@ where
 /// // ... but not newlines
 /// assert!(inline_whitespace.at_least(1).parse("\n\r").has_errors());
 /// ```
-pub fn inline_whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, (), I, E>
+pub fn inline_whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, I, E, ()>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -410,7 +410,7 @@ where
 #[must_use]
 pub fn digits<'src, I, E>(
     radix: u32,
-) -> Repeated<impl Parser<'src, I, E, Output = <I as Input<'src>>::Token> + Copy, I::Token, I, E>
+) -> Repeated<impl Parser<'src, I, E, Output = <I as Input<'src>>::Token> + Copy, I, E, <I as Input<'src>>::Token>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
