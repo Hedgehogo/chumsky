@@ -29,7 +29,7 @@ This tutorial is here to show you how to use Chumsky: it's not a general-purpose
 
 ## Documentation
 
-As we go, we'll be encountering many functions and concepts from Chumsky. I strongly recommend you keep [Chumsky's documentation](https://docs.rs/chumsky/) open in another browser tab and use it to cross-reference your understanding or gain more insight into specific things that you'd like more clarification on. In particular, most of the functions we'll be using come from the [`Parser`](https://docs.rs/chumsky/latest/chumsky/trait.Parser.html) trait. Chumsky's docs include extensive doc examples for almost every function, so be sure to make use of them!
+As we go, we'll be encountering many functions and concepts from Chumsky. I strongly recommend you keep [Chumsky's documentation](https://docs.rs/chumsky/) open in another browser tab and use it to cross-reference your understanding or gain more insight into specific things that you'd like more clarification on. In particular, most of the functions we'll be using come from the [`UnitParser`](https://docs.rs/chumsky/latest/chumsky/trait.UnitParser.html) trait. Chumsky's docs include extensive doc examples for almost every function, so be sure to make use of them!
 
 Chumsky also has [several longer examples](https://github.com/zesterer/chumsky/tree/main/examples) in the main repository: looking at these may help improve your understanding if you get stuck.
 
@@ -43,9 +43,9 @@ If you've ever seen [Backus Naur Form (BNF)](https://en.wikipedia.org/wiki/Backu
 
 Another consequence of creating parsers in a declarative style is that *defining* a parser and *using* a parser are two different things: once created, parsers won't do anything on their own unless you give them an input to parse.
 
-## Similarities between `Parser` and `Iterator`
+## Similarities between `UnitParser` and `Iterator`
 
-The most important API in Chumsky is the [`Parser`] trait, implemented by all parsers. Because parsers don't do
+The most important API in Chumsky is the [`UnitParser`] trait, implemented by all parsers. Because parsers don't do
 anything by themselves, writing Chumsky parsers often feels very similar to writing iterators in Rust using the
 [`Iterator`] trait. If you've enjoyed writing iterators in Rust before, you'll hopefully find the same satisfaction
 writing parsers with Chumsky. They even [share](Parser::map) [several](IterParser::flatten)

@@ -33,7 +33,7 @@ pub trait Input<'src>: 'src {
     /// Spans allow the output of a parser to be tagged with the location that they appear in the input. This is
     /// important for tools that want to produce ergonomic error messages for users to read.
     ///
-    /// For an example of how spans can be used by a parser, see [`Parser::map_with`].
+    /// For an example of how spans can be used by a parser, see [`UnitParser::map_with`].
     ///
     /// If you want to change the input's span before using it for parsing, see [`Input::map_span`], [`Input::map`],
     /// and [`Input::with_context`].
@@ -1461,8 +1461,8 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
 
     /// Get a reference to the context fed to the current parser.
     ///
-    /// See [`ConfigParser::configure`], [`Parser::ignore_with_ctx`] and
-    /// [`Parser::then_with_ctx`] for more information about context-sensitive
+    /// See [`ConfigParser::configure`], [`UnitParser::ignore_with_ctx`] and
+    /// [`UnitParser::then_with_ctx`] for more information about context-sensitive
     /// parsing.
     #[inline(always)]
     pub fn ctx(&self) -> &E::Context {
@@ -1540,7 +1540,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     /// parser may break in unexpected ways at any time.
     ///
     /// You have been warned.
-    pub fn parse<O, P: Parser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<O, E::Error> {
+    pub fn parse<O, P: UnitParser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<O, E::Error> {
         match parser.go::<Emit>(self) {
             Ok(out) => Ok(out),
             // Can't fail!
@@ -1553,7 +1553,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     /// # Import Notice
     ///
     /// See [`InputRef::parse`] about unspecified behavior associated with this function.
-    pub fn check<O, P: Parser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<(), E::Error> {
+    pub fn check<O, P: UnitParser<'src, I, E, Output = O>>(&mut self, parser: P) -> Result<(), E::Error> {
         match parser.go::<Check>(self) {
             Ok(()) => Ok(()),
             // Can't fail!
@@ -1798,7 +1798,7 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
     }
 }
 
-/// Struct used in [`Parser::validate`] to collect user-emitted errors
+/// Struct used in [`UnitParser::validate`] to collect user-emitted errors
 pub struct Emitter<E> {
     emitted: Vec<E>,
 }
@@ -1823,7 +1823,7 @@ impl<E> Emitter<E> {
     }
 }
 
-/// See [`Parser::map_with`].
+/// See [`UnitParser::map_with`].
 pub struct MapExtra<'src, 'b, I: Input<'src>, E: ParserExtra<'src, I>> {
     before: &'b I::Cursor,
     after: &'b I::Cursor,

@@ -72,7 +72,7 @@ enum SExpr {
 //     - Produces an `SExpr` as its output
 //     - Uses `Rich`, a built-in error type provided by chumsky, for error generation
 fn parser<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, extra::Err<Rich<'tokens, Token<'src>>>, Output = SExpr>
+) -> impl UnitParser<'tokens, I, extra::Err<Rich<'tokens, Token<'src>>>, Output = SExpr>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {

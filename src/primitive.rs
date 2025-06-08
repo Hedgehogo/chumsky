@@ -34,7 +34,7 @@ impl<I, E> Clone for End<I, E> {
     }
 }
 
-impl<'src, I, E> Parser<'src, I, E> for End<I, E>
+impl<'src, I, E> UnitParser<'src, I, E> for End<I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -75,7 +75,7 @@ impl<I, E> Clone for Empty<I, E> {
     }
 }
 
-impl<'src, I, E> Parser<'src, I, E> for Empty<I, E>
+impl<'src, I, E> UnitParser<'src, I, E> for Empty<I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -157,7 +157,7 @@ where
     }
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for Just<T, I, E>
+impl<'src, I, E, T> UnitParser<'src, I, E> for Just<T, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -257,7 +257,7 @@ where
     }
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for OneOf<T, I, E>
+impl<'src, I, E, T> UnitParser<'src, I, E> for OneOf<T, I, E>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
@@ -336,7 +336,7 @@ where
     }
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for NoneOf<T, I, E>
+impl<'src, I, E, T> UnitParser<'src, I, E> for NoneOf<T, I, E>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
@@ -422,7 +422,7 @@ where
     }
 }
 
-impl<'src, I, O, E, F> Parser<'src, I, E> for Custom<F, I, O, E>
+impl<'src, I, O, E, F> UnitParser<'src, I, E> for Custom<F, I, O, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -476,7 +476,7 @@ where
     }
 }
 
-impl<'src, I, O, E, F> Parser<'src, I, E> for Select<F, I, O, E>
+impl<'src, I, O, E, F> UnitParser<'src, I, E> for Select<F, I, O, E>
 where
     I: Input<'src>,
     I::Token: Clone + 'src,
@@ -541,7 +541,7 @@ where
     }
 }
 
-impl<'src, I, O, E, F> Parser<'src, I, E> for SelectRef<F, I, O, E>
+impl<'src, I, O, E, F> UnitParser<'src, I, E> for SelectRef<F, I, O, E>
 where
     I: BorrowInput<'src>,
     I::Token: 'src,
@@ -583,7 +583,7 @@ impl<I, E> Clone for Any<I, E> {
     }
 }
 
-impl<'src, I, E> Parser<'src, I, E> for Any<I, E>
+impl<'src, I, E> UnitParser<'src, I, E> for Any<I, E>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
@@ -641,7 +641,7 @@ impl<I, E> Clone for AnyRef<I, E> {
     }
 }
 
-impl<'src, I, E> Parser<'src, I, E> for AnyRef<I, E>
+impl<'src, I, E> UnitParser<'src, I, E> for AnyRef<I, E>
 where
     I: BorrowInput<'src>,
     E: ParserExtra<'src, I>,
@@ -708,12 +708,12 @@ impl<A: Clone, AE, F: Clone, E> Clone for MapCtx<A, AE, F, E> {
     }
 }
 
-impl<'src, I, E, EI, A, F> Parser<'src, I, E> for MapCtx<A, EI, F, E>
+impl<'src, I, E, EI, A, F> UnitParser<'src, I, E> for MapCtx<A, EI, F, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
     EI: ParserExtra<'src, I, Error = E::Error, State = E::State>,
-    A: Parser<'src, I, EI>,
+    A: UnitParser<'src, I, EI>,
     F: Fn(&E::Context) -> EI::Context,
     EI::Context: 'src,
 {
@@ -737,7 +737,7 @@ where
 /// its children in turn, normal maps apply up the tree. This means a parent mapper gets the
 /// result of its children, applies the map, then passes the new result to its parent. This map,
 /// however, applies down the tree. Context is provided from the parent,
-/// such as [`Parser::ignore_with_ctx`] and [`Parser::then_with_ctx`],
+/// such as [`UnitParser::ignore_with_ctx`] and [`UnitParser::then_with_ctx`],
 /// and gets altered before being provided to the children.
 ///
 /// ```
@@ -760,23 +760,23 @@ where
 /// # use chumsky::{
 ///         extra,
 ///         primitive::{just, map_ctx},
-///         ConfigParser, Parser,
+///         ConfigParser, Parser, UnitParser
 /// };
 ///
-/// fn string_ctx<'src>() -> impl Parser<'src, &'src str, extra::Context<String>, Output = ()> {
+/// fn string_ctx<'src>() -> impl Parser<'src, &'src str, (), extra::Context<String>> {
 ///     just("".to_owned())
 ///         .configure(|cfg, s: &String| cfg.seq(s.clone()))
 ///         .ignored()
 /// }
 ///
-/// fn usize_ctx<'src>() -> impl Parser<'src, &'src str, extra::Context<usize>, Output = ()> {
+/// fn usize_ctx<'src>() -> impl Parser<'src, &'src str, (), extra::Context<usize>> {
 ///     map_ctx::<_, _, _, extra::Context<usize>, extra::Context<String>, _>(
 ///        |num: &usize| num.to_string(),
 ///        string_ctx(),
 ///     )
 /// }
 ///
-/// fn specific_usize<'src>(num: usize) -> impl Parser<'src, &'src str, Output = ()> {
+/// fn specific_usize<'src>(num: usize) -> impl Parser<'src, &'src str, ()> {
 ///     usize_ctx().with_ctx(num)
 /// }
 /// assert!(!specific_usize(10).parse("10").has_errors());
@@ -785,7 +785,7 @@ pub const fn map_ctx<'src, P, OP, I, E, EP, F>(mapper: F, parser: P) -> MapCtx<P
 where
     F: Fn(&E::Context) -> EP::Context,
     I: Input<'src>,
-    P: Parser<'src, I, EP, Output = OP>,
+    P: UnitParser<'src, I, EP, Output = OP>,
     E: ParserExtra<'src, I>,
     EP: ParserExtra<'src, I>,
     EP::Context: 'src,
@@ -844,7 +844,7 @@ pub fn todo<'src, I: Input<'src>, O, E: ParserExtra<'src, I>>() -> Todo<I, O, E>
     }
 }
 
-impl<'src, I, O, E> Parser<'src, I, E> for Todo<I, O, E>
+impl<'src, I, O, E> UnitParser<'src, I, E> for Todo<I, O, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -870,13 +870,13 @@ pub struct Choice<T> {
 
 /// Parse using a tuple of many parsers, producing the output of the first to successfully parse.
 ///
-/// This primitive has a twofold improvement over a chain of [`Parser::or`] calls:
+/// This primitive has a twofold improvement over a chain of [`UnitParser::or`] calls:
 ///
 /// - Rust's trait solver seems to resolve the [`Parser`] impl for this type much faster, significantly reducing
 ///   compilation times.
 ///
 /// - Parsing is likely a little faster in some cases because the resulting parser is 'less careful' about error
-///   routing, and doesn't perform the same fine-grained error prioritization that [`Parser::or`] does.
+///   routing, and doesn't perform the same fine-grained error prioritization that [`UnitParser::or`] does.
 ///
 /// These qualities make this parser ideal for lexers.
 ///
@@ -926,12 +926,12 @@ macro_rules! impl_choice_for_tuple {
     };
     (~ $Head:ident $($X:ident)+) => {
         #[allow(unused_variables, non_snake_case)]
-        impl<'src, I, E, $Head, $($X),*> Parser<'src, I, E> for Choice<($Head, $($X,)*)>
+        impl<'src, I, E, $Head, $($X),*> UnitParser<'src, I, E> for Choice<($Head, $($X,)*)>
         where
             I: Input<'src>,
             E: ParserExtra<'src, I>,
-            $Head: Parser<'src, I, E>,
-            $($X: Parser<'src, I, E, Output = $Head::Output>),*
+            $Head: UnitParser<'src, I, E>,
+            $($X: UnitParser<'src, I, E, Output = $Head::Output>),*
         {
             type Output = $Head::Output;
 
@@ -960,11 +960,11 @@ macro_rules! impl_choice_for_tuple {
         }
     };
     (~ $Head:ident) => {
-        impl<'src, I, E, $Head> Parser<'src, I, E> for Choice<($Head,)>
+        impl<'src, I, E, $Head> UnitParser<'src, I, E> for Choice<($Head,)>
         where
             I: Input<'src>,
             E: ParserExtra<'src, I>,
-            $Head:  Parser<'src, I, E>,
+            $Head: UnitParser<'src, I, E>,
         {
             type Output = $Head::Output;
 
@@ -980,9 +980,9 @@ macro_rules! impl_choice_for_tuple {
 
 impl_choice_for_tuple!(A_ B_ C_ D_ E_ F_ G_ H_ I_ J_ K_ L_ M_ N_ O_ P_ Q_ R_ S_ T_ U_ V_ W_ X_ Y_ Z_);
 
-impl<'src, A, I, E> Parser<'src, I, E> for Choice<&[A]>
+impl<'src, A, I, E> UnitParser<'src, I, E> for Choice<&[A]>
 where
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1010,9 +1010,9 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, A, I, E> Parser<'src, I, E> for Choice<Vec<A>>
+impl<'src, A, I, E> UnitParser<'src, I, E> for Choice<Vec<A>>
 where
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1025,9 +1025,9 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, A, I, E, const N: usize> Parser<'src, I, E> for Choice<[A; N]>
+impl<'src, A, I, E, const N: usize> UnitParser<'src, I, E> for Choice<[A; N]>
 where
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1049,16 +1049,16 @@ pub struct Group<T> {
 /// Parse using a tuple of many parsers, producing a tuple of outputs if all successfully parse,
 /// otherwise returning an error if any parsers fail.
 ///
-/// This parser is to [`Parser::then`] as [`choice`] is to [`Parser::or`]
+/// This parser is to [`UnitParser::then`] as [`choice`] is to [`UnitParser::or`]
 pub const fn group<T>(parsers: T) -> Group<T> {
     Group { parsers }
 }
 
-impl<'src, I, E, P, const N: usize> Parser<'src, I, E> for Group<[P; N]>
+impl<'src, I, E, P, const N: usize> UnitParser<'src, I, E> for Group<[P; N]>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    P: Parser<'src, I, E>,
+    P: UnitParser<'src, I, E>,
 {
     type Output = [P::Output; N];
 
@@ -1117,11 +1117,11 @@ macro_rules! impl_group_for_tuple {
     };
     (~ $($X:ident $O:ident)*) => {
         #[allow(unused_variables, non_snake_case)]
-        impl<'src, I, E, $($X),*> Parser<'src, I, E> for Group<($($X,)*)>
+        impl<'src, I, E, $($X),*> UnitParser<'src, I, E> for Group<($($X,)*)>
         where
             I: Input<'src>,
             E: ParserExtra<'src, I>,
-            $($X: Parser<'src, I, E>),*
+            $($X: UnitParser<'src, I, E>),*
         {
             type Output = ($($X::Output,)*);
 

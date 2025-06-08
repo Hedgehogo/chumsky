@@ -10,7 +10,7 @@
 //! ['binding power'](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html#From-Precedence-to-Binding-Power)
 //! that determines how strongly operators should bind to the operands around them.
 //!
-//! Pratt parsers are defined with the [`Parser::pratt`] method.
+//! Pratt parsers are defined with the [`UnitParser::pratt`] method.
 //!
 //! When writing pratt parsers, it is necessary to first define an 'atomic' operand used by the parser for building up
 //! expressions. In most languages, atoms are simple, self-delimiting patterns such as numeric and string literals,
@@ -533,7 +533,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Infix<'src, A, F, O, O
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = Op>,
+    A: UnitParser<'src, I, E, Output = Op>,
     F: Fn(O, Op, O, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -629,7 +629,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Prefix<'src, A, F, O, 
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = Op>,
+    A: UnitParser<'src, I, E, Output = Op>,
     F: Fn(Op, O, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -714,7 +714,7 @@ impl<'src, I, O, E, A, F, Op> Operator<'src, I, O, E> for Postfix<'src, A, F, O,
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = Op>,
+    A: UnitParser<'src, I, E, Output = Op>,
     F: Fn(O, Op, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     #[inline]
@@ -747,7 +747,7 @@ where
     op_check_and_emit!();
 }
 
-/// See [`Parser::pratt`].
+/// See [`UnitParser::pratt`].
 #[derive(Copy, Clone)]
 pub struct Pratt<Atom, Ops> {
     pub(crate) atom: Atom,
@@ -922,7 +922,7 @@ impl<'src, Atom, Ops> Pratt<Atom, Ops> {
     where
         I: Input<'src>,
         E: ParserExtra<'src, I>,
-        Atom: Parser<'src, I, E, Output = O>,
+        Atom: UnitParser<'src, I, E, Output = O>,
         Ops: Operator<'src, I, O, E>,
     {
         let pre_expr = inp.save();
@@ -978,11 +978,11 @@ impl<'src, Atom, Ops> Pratt<Atom, Ops> {
 }
 
 #[allow(unused_variables, non_snake_case)]
-impl<'src, I, E, Atom, Ops> Parser<'src, I, E> for Pratt<Atom, Ops>
+impl<'src, I, E, Atom, Ops> UnitParser<'src, I, E> for Pratt<Atom, Ops>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    Atom: Parser<'src, I, E>,
+    Atom: UnitParser<'src, I, E>,
     Ops: Operator<'src, I, Atom::Output, E>,
 {
     type Output = Atom::Output;
@@ -1007,7 +1007,7 @@ mod tests {
         }
     }
 
-    fn parser<'src>() -> impl Parser<'src, &'src str, Output = i64> {
+    fn parser<'src>() -> impl Parser<'src, &'src str, i64> {
         let atom = text::int(10).padded().from_str::<i64>().unwrapped();
 
         atom.pratt((
@@ -1035,7 +1035,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn parser_dynamic<'src>() -> impl Parser<'src, &'src str, Output = i64> {
+    fn parser_dynamic<'src>() -> impl Parser<'src, &'src str, i64> {
         let atom = text::int(10).padded().from_str::<i64>().unwrapped();
 
         atom.pratt(vec![
@@ -1085,7 +1085,7 @@ mod tests {
         e(Box::new(l), Box::new(r))
     }
 
-    fn expr_parser<'src>() -> impl Parser<'src, &'src str, Err<Simple<'src, char>>, Output = String> {
+    fn expr_parser<'src>() -> impl Parser<'src, &'src str, String, Err<Simple<'src, char>>> {
         let atom = text::int(10).from_str().unwrapped().map(Expr::Literal);
 
         atom.pratt((
@@ -1097,7 +1097,7 @@ mod tests {
         .map(|x| x.to_string())
     }
 
-    fn complete_parser<'src>() -> impl Parser<'src, &'src str, Err<Simple<'src, char>>, Output = String> {
+    fn complete_parser<'src>() -> impl Parser<'src, &'src str, String, Err<Simple<'src, char>>> {
         expr_parser().then_ignore(end())
     }
 

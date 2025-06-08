@@ -29,7 +29,7 @@ pub const fn number<const F: u128, I, O, E>() -> Number<F, I, O, E> {
 /// A label denoting a parseable number.
 pub struct ExpectedNumber;
 
-impl<'src, const F: u128, I, O, E> Parser<'src, I, E> for Number<F, I, O, E>
+impl<'src, const F: u128, I, O, E> UnitParser<'src, I, E> for Number<F, I, O, E>
 where
     O: FromLexical,
     I: SliceInput<'src, Cursor = usize>,
@@ -63,7 +63,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{extra, Parser};
+    use crate::{extra, UnitParser};
     use lexical::format::RUST_LITERAL;
 
     // These have been shamelessly yanked from the rust test-float-parse suite.

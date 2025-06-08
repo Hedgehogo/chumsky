@@ -15,7 +15,7 @@ pub use label::LabelError;
 ///
 /// If you have a custom error type in your compiler, or your needs are not sufficiently met by [`Simple`], you should
 /// implement this trait. If your error type has 'extra' features that allow for more specific error messages, you can
-/// use the [`Parser::map_err`] or [`Parser::try_map`] functions to take advantage of these inline within your parser.
+/// use the [`UnitParser::map_err`] or [`UnitParser::try_map`] functions to take advantage of these inline within your parser.
 ///
 /// # Examples
 ///
@@ -663,7 +663,7 @@ impl<'a, T, S> Rich<'a, T, S> {
     /// Return an iterator over the labelled contexts of this error, from least general to most.
     ///
     /// 'Context' here means parser patterns that the parser was in the process of parsing when the error occurred. To
-    /// add labelled contexts, see [`Parser::labelled`].
+    /// add labelled contexts, see [`UnitParser::labelled`].
     pub fn contexts(&self) -> impl Iterator<Item = (&RichPattern<'a, T>, &S)> {
         self.context.iter().map(|(l, s)| (l, s))
     }

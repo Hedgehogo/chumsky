@@ -10,7 +10,7 @@ enum Token {
 }
 
 #[allow(clippy::let_and_return)]
-fn parser<'src, I, M>(make_input: M) -> impl Parser<'src, I, Output = i64>
+fn parser<'src, I, M>(make_input: M) -> impl UnitParser<'src, I, Output = i64>
 where
     I: BorrowInput<'src, Token = Token, Span = SimpleSpan>,
     M: Fn(SimpleSpan, &'src [(Token, SimpleSpan)]) -> I + Clone + 'src,

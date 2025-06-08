@@ -4,12 +4,12 @@
 use super::*;
 use ::either::Either;
 
-impl<'src, L, R, I, E> Parser<'src, I, E> for Either<L, R>
+impl<'src, L, R, I, E> UnitParser<'src, I, E> for Either<L, R>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    L: Parser<'src, I, E>,
-    R: Parser<'src, I, E, Output = L::Output>,
+    L: UnitParser<'src, I, E>,
+    R: UnitParser<'src, I, E, Output = L::Output>,
 {
     type Output = L::Output;
 
@@ -33,11 +33,11 @@ where
 mod tests {
     use crate::{
         prelude::{any, just},
-        IterParser, Parser,
+        IterParser, UnitParser, Parser
     };
     use either::Either;
 
-    fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
+    fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
         any()
             .filter(|c: &char| c.is_ascii_digit())
             .repeated()

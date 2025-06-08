@@ -11,7 +11,7 @@ use super::*;
 
 /// The type of a lazy parser.
 pub type Lazy<'src, A, I, E> =
-    ThenIgnore<A, Repeated<Any<I, E>, I, E, <I as Input<'src>>::Token>, E, <A as Parser<'src, I, E>>::Output>;
+    ThenIgnore<A, Repeated<Any<I, E>, I, E, <I as Input<'src>>::Token>, E, <A as UnitParser<'src, I, E>>::Output>;
 
 /// Alter the configuration of a struct using parse-time context
 pub struct Configure<A, F, O> {
@@ -32,7 +32,7 @@ impl<A: Clone, F: Clone, O> Clone for Configure<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for Configure<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for Configure<A, F, O>
 where
     A: ConfigParser<'src, I, E, Output = O>,
     F: Fn(A::Config, &E::Context) -> A::Config,
@@ -72,7 +72,7 @@ impl<A: Clone, F: Clone, OI> Clone for IterConfigure<A, F, OI> {
     }
 }
 
-impl<'src, I, E, A, F, OI> Parser<'src, I, E> for IterConfigure<A, F, OI>
+impl<'src, I, E, A, F, OI> UnitParser<'src, I, E> for IterConfigure<A, F, OI>
 where
     A: ConfigIterParser<'src, I, E, Item = OI>,
     F: Fn(A::Config, &E::Context) -> A::Config,
@@ -151,7 +151,7 @@ impl<A: Clone, F: Clone, OI> Clone for TryIterConfigure<A, F, OI> {
     }
 }
 
-impl<'src, I, E, A, F, OI> Parser<'src, I, E> for TryIterConfigure<A, F, OI>
+impl<'src, I, E, A, F, OI> UnitParser<'src, I, E> for TryIterConfigure<A, F, OI>
 where
     A: ConfigIterParser<'src, I, E, Item = OI>,
     F: Fn(A::Config, &E::Context, I::Span) -> Result<A::Config, E::Error>,
@@ -211,7 +211,7 @@ where
     }
 }
 
-/// See [`Parser::to_slice`]
+/// See [`UnitParser::to_slice`]
 pub struct ToSlice<A> {
     pub(crate) parser: A,
 }
@@ -225,9 +225,9 @@ impl<A: Clone> Clone for ToSlice<A> {
     }
 }
 
-impl<'src, I, E, A> Parser<'src, I, E> for ToSlice<A>
+impl<'src, I, E, A> UnitParser<'src, I, E> for ToSlice<A>
 where
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     I: SliceInput<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -247,7 +247,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::filter`].
+/// See [`UnitParser::filter`].
 pub struct Filter<A, F, O> {
     pub(crate) parser: A,
     pub(crate) filter: F,
@@ -266,11 +266,11 @@ impl<A: Clone, F: Clone, O> Clone for Filter<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for Filter<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for Filter<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     F: Fn(&A::Output) -> bool,
 {
     type Output = O;
@@ -292,7 +292,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::map`].
+/// See [`UnitParser::map`].
 pub struct Map<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -311,11 +311,11 @@ impl<A: Clone, O, F: Clone> Clone for Map<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for Map<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for Map<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn(A::Output) -> O,
 {
     type Output = O;
@@ -366,7 +366,7 @@ where
     }
 }
 
-/// See [`Parser::map_with`].
+/// See [`UnitParser::map_with`].
 pub struct MapWith<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -385,11 +385,11 @@ impl<A: Clone, O, F: Clone> Clone for MapWith<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for MapWith<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for MapWith<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     type Output = O;
@@ -446,7 +446,7 @@ where
     }
 }
 
-/// See [`Parser::map_group`].
+/// See [`UnitParser::map_group`].
 #[cfg(feature = "nightly")]
 pub struct MapGroup<A, F, O> {
     pub(crate) parser: A,
@@ -469,11 +469,11 @@ impl<A: Clone, O, F: Clone> Clone for MapGroup<A, F, O> {
 }
 
 #[cfg(feature = "nightly")]
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for MapGroup<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for MapGroup<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn<A::Output, Output = O>,
     A::Output: Tuple,
 {
@@ -528,7 +528,7 @@ where
     }
 }
 
-/// See [`Parser::to_span`].
+/// See [`UnitParser::to_span`].
 pub struct ToSpan<A> {
     pub(crate) parser: A,
 }
@@ -542,11 +542,11 @@ impl<A: Clone> Clone for ToSpan<A> {
     }
 }
 
-impl<'src, I, E, A> Parser<'src, I, E> for ToSpan<A>
+impl<'src, I, E, A> UnitParser<'src, I, E> for ToSpan<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
 {
     type Output = I::Span;
 
@@ -560,7 +560,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::try_foldl`].
+/// See [`UnitParser::try_foldl`].
 pub struct TryFoldl<F, A, B, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -585,10 +585,10 @@ impl<F: Clone, A: Clone, B: Clone, E, O> Clone for TryFoldl<F, A, B, E, O> {
     }
 }
 
-impl<'src, I, F, A, B, E, O> Parser<'src, I, E> for TryFoldl<F, A, B, E, O>
+impl<'src, I, F, A, B, E, O> UnitParser<'src, I, E> for TryFoldl<F, A, B, E, O>
 where
     I: Input<'src>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
     F: Fn(O, B::Item, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
@@ -634,7 +634,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::try_map`].
+/// See [`UnitParser::try_map`].
 pub struct TryMap<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -653,11 +653,11 @@ impl<A: Clone, O, F: Clone> Clone for TryMap<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for TryMap<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for TryMap<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn(A::Output, I::Span) -> Result<O, E::Error>,
 {
     type Output = O;
@@ -693,7 +693,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::try_map_with`].
+/// See [`UnitParser::try_map_with`].
 pub struct TryMapWith<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -712,11 +712,11 @@ impl<A: Clone, O, F: Clone> Clone for TryMapWith<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for TryMapWith<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for TryMapWith<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
 {
     type Output = O;
@@ -737,7 +737,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::to`].
+/// See [`UnitParser::to`].
 pub struct To<A, O> {
     pub(crate) parser: A,
     pub(crate) to: O,
@@ -753,11 +753,11 @@ impl<A: Clone, O: Clone> Clone for To<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for To<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for To<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     O: Clone,
 {
     type Output = O;
@@ -771,7 +771,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::into_iter`].
+/// See [`UnitParser::into_iter`].
 pub struct IntoIter<A, O> {
     pub(crate) parser: A,
     #[allow(dead_code)]
@@ -788,11 +788,11 @@ impl<A: Clone, O> Clone for IntoIter<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for IntoIter<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for IntoIter<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     A::Output: IntoIterator<Item = O>,
 {
     type Output = ();
@@ -810,14 +810,14 @@ impl<'src, I, E, A, O> IterParser<'src, I, E> for IntoIter<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     A::Output: IntoIterator<Item = O>,
 {
     type Item = O;
 
     // TODO: Don't always produce output for non-emitting modes, but needed due to length. Use some way to 'select'
     // between iterator and usize at compile time.
-    type IterState<M: Mode> = <<A as Parser<'src, I, E>>::Output as IntoIterator>::IntoIter; //M::Output<O::IntoIter>;
+    type IterState<M: Mode> = <<A as UnitParser<'src, I, E>>::Output as IntoIterator>::IntoIter; //M::Output<O::IntoIter>;
 
     const NONCONSUMPTION_IS_OK: bool = true;
 
@@ -840,7 +840,7 @@ where
     }
 }
 
-/// See [`Parser::ignored`].
+/// See [`UnitParser::ignored`].
 pub struct Ignored<A> {
     pub(crate) parser: A,
 }
@@ -854,11 +854,11 @@ impl<A: Clone> Clone for Ignored<A> {
     }
 }
 
-impl<'src, I, E, A> Parser<'src, I, E> for Ignored<A>
+impl<'src, I, E, A> UnitParser<'src, I, E> for Ignored<A>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
 {
     type Output = ();
 
@@ -871,7 +871,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::unwrapped`].
+/// See [`UnitParser::unwrapped`].
 pub struct Unwrapped<A, O> {
     pub(crate) parser: A,
     pub(crate) location: Location<'static>,
@@ -890,11 +890,11 @@ impl<A: Clone, O> Clone for Unwrapped<A, O> {
     }
 }
 
-impl<'src, I, E, A, O, U> Parser<'src, I, E> for Unwrapped<A, Result<O, U>>
+impl<'src, I, E, A, O, U> UnitParser<'src, I, E> for Unwrapped<A, Result<O, U>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = Result<O, U>>,
+    A: UnitParser<'src, I, E, Output = Result<O, U>>,
     U: fmt::Debug,
 {
     type Output = O;
@@ -914,11 +914,11 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for Unwrapped<A, Option<O>>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Unwrapped<A, Option<O>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = Option<O>>,
+    A: UnitParser<'src, I, E, Output = Option<O>>,
 {
     type Output = O;
 
@@ -937,7 +937,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::memoized`].
+/// See [`UnitParser::memoized`].
 #[cfg(feature = "memoization")]
 pub struct Memoized<A, O> {
     pub(crate) parser: A,
@@ -958,12 +958,12 @@ impl<A: Clone, O> Clone for Memoized<A, O> {
 }
 
 #[cfg(feature = "memoization")]
-impl<'src, I, E, A, O> Parser<'src, I, E> for Memoized<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Memoized<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
     E::Error: Clone,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Output = O;
 
@@ -1008,7 +1008,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::then`].
+/// See [`UnitParser::then`].
 pub struct Then<A, OA, B, OB, E> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -1027,12 +1027,12 @@ impl<A: Clone, OA, B: Clone, OB, E> Clone for Then<A, OA, B, OB, E> {
     }
 }
 
-impl<'src, I, E, A, OA, B, OB> Parser<'src, I, E> for Then<A, OA, B, OB, E>
+impl<'src, I, E, A, OA, B, OB> UnitParser<'src, I, E> for Then<A, OA, B, OB, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = OA>,
-    B: Parser<'src, I, E, Output = OB>,
+    A: UnitParser<'src, I, E, Output = OA>,
+    B: UnitParser<'src, I, E, Output = OB>,
 {
     type Output = (OA, OB);
 
@@ -1088,7 +1088,7 @@ where
     }
 }
 
-/// See [`Parser::ignore_then`].
+/// See [`UnitParser::ignore_then`].
 pub struct IgnoreThen<A, B, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -1107,12 +1107,12 @@ impl<A: Clone, B: Clone, E, O> Clone for IgnoreThen<A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for IgnoreThen<A, B, E, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for IgnoreThen<A, B, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
-    B: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E>,
+    B: UnitParser<'src, I, E, Output = O>,
 {
     type Output = O;
 
@@ -1126,7 +1126,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::then_ignore`].
+/// See [`UnitParser::then_ignore`].
 pub struct ThenIgnore<A, B, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -1145,12 +1145,12 @@ impl<A: Clone, B: Clone, E, O> Clone for ThenIgnore<A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for ThenIgnore<A, B, E, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for ThenIgnore<A, B, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     type Output = O;
 
@@ -1164,7 +1164,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::nested_in`].
+/// See [`UnitParser::nested_in`].
 pub struct NestedIn<A, B, I1, E1, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -1183,12 +1183,12 @@ impl<A: Clone, B: Clone, I1, E1, E, O> Clone for NestedIn<A, B, I1, E1, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, I1, E1, O> Parser<'src, I, E> for NestedIn<A, B, I1, E1, E, O>
+impl<'src, I, E, A, B, I1, E1, O> UnitParser<'src, I, E> for NestedIn<A, B, I1, E1, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I1, E1, Output = O>,
-    B: Parser<'src, I, E, Output = I1>,
+    A: UnitParser<'src, I1, E1, Output = O>,
+    B: UnitParser<'src, I, E, Output = I1>,
     I1: Input<'src>,
     E1: ParserExtra<'src, I1, State = E::State, Context = E::Context, Error = E::Error>,
 {
@@ -1225,7 +1225,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::ignore_with_ctx`].
+/// See [`UnitParser::ignore_with_ctx`].
 pub struct IgnoreWithCtx<A, B, I, E, O> {
     pub(crate) parser: A,
     pub(crate) then: B,
@@ -1244,14 +1244,14 @@ impl<A: Clone, B: Clone, I, E, O> Clone for IgnoreWithCtx<A, B, I, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E>
     for IgnoreWithCtx<A, B, I, extra::Full<E::Error, E::State, A::Output>, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     A::Output: 'src,
-    B: Parser<'src, I, extra::Full<E::Error, E::State, A::Output>, Output = O>,
+    B: UnitParser<'src, I, extra::Full<E::Error, E::State, A::Output>, Output = O>,
 {
     type Output = O;
 
@@ -1269,7 +1269,7 @@ impl<'src, I, E, A, B, O> IterParser<'src, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     A::Output: 'src,
     B: IterParser<'src, I, extra::Full<E::Error, E::State, A::Output>, Item = O>,
 {
@@ -1304,7 +1304,7 @@ where
     }
 }
 
-/// See [`Parser::then_with_ctx`].
+/// See [`UnitParser::then_with_ctx`].
 pub struct ThenWithCtx<A, OA, B, OB, I, E> {
     pub(crate) parser: A,
     pub(crate) then: B,
@@ -1323,14 +1323,14 @@ impl<A: Clone, OA, B: Clone, OB, I, E> Clone for ThenWithCtx<A, OA, B, OB, I, E>
     }
 }
 
-impl<'src, I, E, A, OA, B, OB> Parser<'src, I, E>
+impl<'src, I, E, A, OA, B, OB> UnitParser<'src, I, E>
     for ThenWithCtx<A, OA, B, OB, I, extra::Full<E::Error, E::State, OA>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = OA>,
+    A: UnitParser<'src, I, E, Output = OA>,
     OA: 'src,
-    B: Parser<'src, I, extra::Full<E::Error, E::State, OA>, Output = OB>,
+    B: UnitParser<'src, I, extra::Full<E::Error, E::State, OA>, Output = OB>,
 {
     type Output = (OA, OB);
 
@@ -1349,7 +1349,7 @@ impl<'src, I, E, A, B, O> IterParser<'src, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     A::Output: 'src,
     B: IterParser<'src, I, extra::Full<E::Error, E::State, A::Output>, Item = O>,
 {
@@ -1383,7 +1383,7 @@ where
     }
 }
 
-/// See [`Parser::with_ctx`].
+/// See [`UnitParser::with_ctx`].
 pub struct WithCtx<A, Ctx, O> {
     pub(crate) parser: A,
     pub(crate) ctx: Ctx,
@@ -1402,11 +1402,11 @@ impl<A: Clone, Ctx: Clone, O> Clone for WithCtx<A, Ctx, O> {
     }
 }
 
-impl<'src, I, E, A, Ctx, O> Parser<'src, I, E> for WithCtx<A, Ctx, O>
+impl<'src, I, E, A, Ctx, O> UnitParser<'src, I, E> for WithCtx<A, Ctx, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, extra::Full<E::Error, E::State, Ctx>, Output = O>,
+    A: UnitParser<'src, I, extra::Full<E::Error, E::State, Ctx>, Output = O>,
     Ctx: 'src,
 {
     type Output = O;
@@ -1419,7 +1419,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::with_state`].
+/// See [`UnitParser::with_state`].
 pub struct WithState<A, State, O> {
     pub(crate) parser: A,
     pub(crate) state: State,
@@ -1438,11 +1438,11 @@ impl<A: Clone, Ctx: Clone, O> Clone for WithState<A, Ctx, O> {
     }
 }
 
-impl<'src, I, E, A, State, O> Parser<'src, I, E> for WithState<A, State, O>
+impl<'src, I, E, A, State, O> UnitParser<'src, I, E> for WithState<A, State, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, extra::Full<E::Error, State, E::Context>, Output = O>,
+    A: UnitParser<'src, I, extra::Full<E::Error, State, E::Context>, Output = O>,
     State: 'src + Clone + Inspector<'src, I>,
 {
     type Output = O;
@@ -1455,7 +1455,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::delimited_by`].
+/// See [`UnitParser::delimited_by`].
 pub struct DelimitedBy<A, B, C, O> {
     pub(crate) parser: A,
     pub(crate) start: B,
@@ -1476,13 +1476,13 @@ impl<A: Clone, B: Clone, C: Clone, O> Clone for DelimitedBy<A, B, C, O> {
     }
 }
 
-impl<'src, I, E, A, B, C, O> Parser<'src, I, E> for DelimitedBy<A, B, C, O>
+impl<'src, I, E, A, B, C, O> UnitParser<'src, I, E> for DelimitedBy<A, B, C, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
-    C: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
+    C: UnitParser<'src, I, E>,
 {
     type Output = O;
 
@@ -1497,7 +1497,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::padded_by`].
+/// See [`UnitParser::padded_by`].
 pub struct PaddedBy<A, B, O> {
     pub(crate) parser: A,
     pub(crate) padding: B,
@@ -1516,12 +1516,12 @@ impl<A: Clone, B: Clone, O> Clone for PaddedBy<A, B, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for PaddedBy<A, B, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for PaddedBy<A, B, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     type Output = O;
 
@@ -1536,7 +1536,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::or`].
+/// See [`UnitParser::or`].
 pub struct Or<A, B, O> {
     pub(crate) choice: crate::primitive::Choice<(A, B)>,
     #[allow(dead_code)]
@@ -1553,12 +1553,12 @@ impl<A: Clone, B: Clone, O> Clone for Or<A, B, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for Or<A, B, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for Or<A, B, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E, Output = O>,
 {
     type Output = O;
 
@@ -1570,7 +1570,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// Configuration for [`Parser::repeated`], used in [`ConfigParser::configure`].
+/// Configuration for [`UnitParser::repeated`], used in [`ConfigParser::configure`].
 #[derive(Default)]
 pub struct RepeatedCfg {
     at_least: Option<usize>,
@@ -1598,7 +1598,7 @@ impl RepeatedCfg {
     }
 }
 
-/// See [`Parser::repeated`].
+/// See [`UnitParser::repeated`].
 pub struct Repeated<A, I, E, O> {
     pub(crate) parser: A,
     pub(crate) at_least: usize,
@@ -1626,7 +1626,7 @@ impl<A: Clone, I, E, O> Clone for Repeated<A, I, E, O> {
 
 impl<'src, A, I, E, O> Repeated<A, I, E, O>
 where
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {
@@ -1691,11 +1691,11 @@ where
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for Repeated<A, I, E, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Repeated<A, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Output = ();
 
@@ -1749,7 +1749,7 @@ impl<'src, A, I, E, O> IterParser<'src, I, E> for Repeated<A, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Item = O;
     type IterState<M: Mode> = usize;
@@ -1794,7 +1794,7 @@ impl<'src, A, I, E, O> ConfigIterParser<'src, I, E> for Repeated<A, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Config = RepeatedCfg;
 
@@ -1830,7 +1830,7 @@ where
     }
 }
 
-/// See [`Parser::separated_by`].
+/// See [`UnitParser::separated_by`].
 pub struct SeparatedBy<A, B, I, E, O> {
     pub(crate) parser: A,
     pub(crate) separator: B,
@@ -1866,8 +1866,8 @@ impl<'src, I, E, A, B, O> SeparatedBy<A, B, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     /// Require that the pattern appear at least a minimum number of times.
     ///
@@ -2003,8 +2003,8 @@ impl<'src, I, E, A, B, O> IterParser<'src, I, E> for SeparatedBy<A, B, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     type Item = O;
     type IterState<M: Mode>
@@ -2081,12 +2081,12 @@ where
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for SeparatedBy<A, B, I, E, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for SeparatedBy<A, B, I, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     type Output = ();
 
@@ -2191,7 +2191,7 @@ impl<A: Clone, O> Clone for Collect<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for Collect<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Collect<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2252,7 +2252,7 @@ impl<A: Clone, O> Clone for CollectExactly<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for CollectExactly<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for CollectExactly<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2297,7 +2297,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::or_not`].
+/// See [`UnitParser::or_not`].
 pub struct OrNot<A, OA> {
     pub(crate) parser: A,
     #[allow(dead_code)]
@@ -2314,11 +2314,11 @@ impl<A: Clone, OA> Clone for OrNot<A, OA> {
     }
 }
 
-impl<'src, I, E, A, OA> Parser<'src, I, E> for OrNot<A, OA>
+impl<'src, I, E, A, OA> UnitParser<'src, I, E> for OrNot<A, OA>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = OA>,
+    A: UnitParser<'src, I, E, Output = OA>,
 {
     type Output = Option<OA>;
 
@@ -2341,7 +2341,7 @@ impl<'src, I, E, A, O> IterParser<'src, I, E> for OrNot<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Item = O;
     type IterState<M: Mode> = bool;
@@ -2381,7 +2381,7 @@ where
     }
 }
 
-/// See [`Parser::not`].
+/// See [`UnitParser::not`].
 pub struct Not<A> {
     pub(crate) parser: A,
 }
@@ -2395,11 +2395,11 @@ impl<A: Clone> Clone for Not<A> {
     }
 }
 
-impl<'src, I, E, A> Parser<'src, I, E> for Not<A>
+impl<'src, I, E, A> UnitParser<'src, I, E> for Not<A>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
 {
     type Output = ();
 
@@ -2517,7 +2517,7 @@ where
     }
 }
 
-/// See [`Parser::and_is`].
+/// See [`UnitParser::and_is`].
 pub struct AndIs<A, B, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -2536,12 +2536,12 @@ impl<A: Clone, B: Clone, O> Clone for AndIs<A, B, O> {
     }
 }
 
-impl<'src, I, E, A, B, O> Parser<'src, I, E> for AndIs<A, B, O>
+impl<'src, I, E, A, B, O> UnitParser<'src, I, E> for AndIs<A, B, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
-    B: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E>,
 {
     type Output = O;
 
@@ -2602,12 +2602,12 @@ impl<F: Clone, A: Clone, B: Clone, E, O> Clone for Foldr<F, A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, F, O> Parser<'src, I, E> for Foldr<F, A, B, E, O>
+impl<'src, I, E, A, B, F, O> UnitParser<'src, I, E> for Foldr<F, A, B, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
     A: IterParser<'src, I, E>,
-    B: Parser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E, Output = O>,
     F: Fn(A::Item, O) -> O,
 {
     type Output = O;
@@ -2674,12 +2674,12 @@ impl<F: Clone, A: Clone, B: Clone, E, O> Clone for FoldrWith<F, A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, F, O> Parser<'src, I, E> for FoldrWith<F, A, B, E, O>
+impl<'src, I, E, A, B, F, O> UnitParser<'src, I, E> for FoldrWith<F, A, B, E, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
     A: IterParser<'src, I, E>,
-    B: Parser<'src, I, E, Output = O>,
+    B: UnitParser<'src, I, E, Output = O>,
     F: Fn(A::Item, O, &mut MapExtra<'src, '_, I, E>) -> O,
 {
     type Output = O;
@@ -2724,7 +2724,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::foldl`].
+/// See [`UnitParser::foldl`].
 pub struct Foldl<F, A, B, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -2749,10 +2749,10 @@ impl<F: Clone, A: Clone, B: Clone, E, O> Clone for Foldl<F, A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, F, O> Parser<'src, I, E> for Foldl<F, A, B, E, O>
+impl<'src, I, E, A, B, F, O> UnitParser<'src, I, E> for Foldl<F, A, B, E, O>
 where
     I: Input<'src>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
     F: Fn(O, B::Item) -> O,
@@ -2790,7 +2790,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::foldl_with`].
+/// See [`UnitParser::foldl_with`].
 pub struct FoldlWith<F, A, B, E, O> {
     pub(crate) parser_a: A,
     pub(crate) parser_b: B,
@@ -2815,10 +2815,10 @@ impl<F: Clone, A: Clone, B: Clone, E, O> Clone for FoldlWith<F, A, B, E, O> {
     }
 }
 
-impl<'src, I, E, A, B, F, O> Parser<'src, I, E> for FoldlWith<F, A, B, E, O>
+impl<'src, I, E, A, B, F, O> UnitParser<'src, I, E> for FoldlWith<F, A, B, E, O>
 where
     I: Input<'src>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     B: IterParser<'src, I, E>,
     E: ParserExtra<'src, I>,
     F: Fn(O, B::Item, &mut MapExtra<'src, '_, I, E>) -> O,
@@ -2859,7 +2859,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::rewind`].
+/// See [`UnitParser::rewind`].
 #[must_use]
 pub struct Rewind<A, O> {
     pub(crate) parser: A,
@@ -2877,11 +2877,11 @@ impl<A: Clone, O> Clone for Rewind<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for Rewind<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Rewind<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Output = O;
 
@@ -2900,7 +2900,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::map_err`].
+/// See [`UnitParser::map_err`].
 pub struct MapErr<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -2919,11 +2919,11 @@ impl<A: Clone, F: Clone, O> Clone for MapErr<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for MapErr<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for MapErr<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     F: Fn(E::Error) -> E::Error,
 {
     type Output = O;
@@ -2941,7 +2941,7 @@ where
     go_extra!(Self::Output);
 }
 
-// /// See [`Parser::map_err_with_span`].
+// /// See [`UnitParser::map_err_with_span`].
 // #[derive(Copy, Clone)]
 // pub struct MapErrWithSpan<A, F> {
 //     pub(crate) parser: A,
@@ -2979,7 +2979,7 @@ where
 // }
 
 // TODO: Remove combinator, replace with map_err_with
-/// See [`Parser::map_err_with_state`].
+/// See [`UnitParser::map_err_with_state`].
 pub struct MapErrWithState<A, F, O> {
     pub(crate) parser: A,
     pub(crate) mapper: F,
@@ -2998,11 +2998,11 @@ impl<A: Clone, F: Clone, O> Clone for MapErrWithState<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for MapErrWithState<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for MapErrWithState<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
     F: Fn(E::Error, I::Span, &mut E::State) -> E::Error,
 {
     type Output = O;
@@ -3032,7 +3032,7 @@ where
     go_extra!(Self::Output);
 }
 
-/// See [`Parser::validate`]
+/// See [`UnitParser::validate`]
 pub struct Validate<A, F, O> {
     pub(crate) parser: A,
     pub(crate) validator: F,
@@ -3051,11 +3051,11 @@ impl<A: Clone, F: Clone, O> Clone for Validate<A, F, O> {
     }
 }
 
-impl<'src, I, E, A, F, O> Parser<'src, I, E> for Validate<A, F, O>
+impl<'src, I, E, A, F, O> UnitParser<'src, I, E> for Validate<A, F, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     F: Fn(A::Output, &mut MapExtra<'src, '_, I, E>, &mut Emitter<E::Error>) -> O,
 {
     type Output = O;
@@ -3079,7 +3079,7 @@ where
     go_extra!(Self::Output);
 }
 
-// /// See [`Parser::or_else`].
+// /// See [`UnitParser::or_else`].
 // #[derive(Copy, Clone)]
 // pub struct OrElse<A, F> {
 //     pub(crate) parser: A,
@@ -3125,7 +3125,7 @@ where
 //     go_extra!(Self::Output);
 // }
 
-/// See [`Parser::contextual`].
+/// See [`UnitParser::contextual`].
 pub struct Contextual<A, O> {
     pub(crate) inner: A,
     #[allow(dead_code)]
@@ -3142,11 +3142,11 @@ impl<A: Clone, O> Clone for Contextual<A, O> {
     }
 }
 
-impl<'src, I, E, A, O> Parser<'src, I, E> for Contextual<A, O>
+impl<'src, I, E, A, O> UnitParser<'src, I, E> for Contextual<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Output = A::Output;
 
@@ -3162,7 +3162,7 @@ impl<'src, I, E, A, O> ConfigParser<'src, I, E> for Contextual<A, O>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O>,
+    A: UnitParser<'src, I, E, Output = O>,
 {
     type Config = bool;
 

@@ -30,7 +30,7 @@ enum Expr<'src> {
 }
 
 #[allow(clippy::let_and_return)]
-fn parser<'src>() -> impl Parser<'src, &'src str, Output = Expr<'src>> {
+fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
     let ident = text::ascii::ident().padded();
 
     let expr = recursive(|expr| {

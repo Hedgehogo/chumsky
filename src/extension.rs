@@ -61,7 +61,7 @@
 //! }
 //!
 //! // Let's give our parser a test!
-//! fn make_parser<'src>() -> impl Parser<'src, &'src [u8], Output = ()> {
+//! fn make_parser<'src>() -> impl Parser<'src, &'src [u8], ()> {
 //!     null()
 //! }
 //!
@@ -100,15 +100,17 @@ mod current {
     ///
     /// pub struct FrobnicatedWith<A, B> { a: A, b: B }
     ///
-    /// pub trait ParserExt<'src, I, O, E>
+    /// pub trait ParserExt<'src, I, E>
     /// where
     ///     I: Input<'src>,
     ///     E: extra::ParserExtra<'src, I>
     /// {
+    ///     type Output;
+    /// 
     ///     fn frobnicated_with<B>(self, other: B) -> FrobnicatedWith<Self, B>
     ///     where
     ///         Self: Sized,
-    ///         B: Parser<'src, I, E, Output = O>,
+    ///         B: Parser<'src, I, Self::Output, E>,
     ///     {
     ///         FrobnicatedWith { a: self, b: other }
     ///     }
@@ -156,7 +158,7 @@ mod current {
     #[repr(transparent)]
     pub struct Ext<T: ?Sized>(pub T);
 
-    impl<'src, I, E, P> Parser<'src, I, E> for Ext<P>
+    impl<'src, I, E, P> UnitParser<'src, I, E> for Ext<P>
     where
         I: Input<'src>,
         E: ParserExtra<'src, I>,

@@ -67,9 +67,9 @@ Here's an example of a typical parser function. We'll go over what each part mea
 
 ```
 # use chumsky::prelude::*;
-//        (1)            (2)              (3)         (4)
-//        _|__       _____|_____       ____|____  _____|_____
-fn parser<'src>() -> impl Parser<'src, &'src str, Output = ()> {
+//        (1)            (2)              (3)    (4)
+//        _|__       _____|_____       ____|____  |_
+fn parser<'src>() -> impl Parser<'src, &'src str, ()> {
     end() // --(5)
 }
 ```
@@ -85,13 +85,13 @@ fn parser<'src>() -> impl Parser<'src, &'src str, Output = ()> {
    *type erasure*, which would require performing [dynamic dispatch](https://en.wikipedia.org/wiki/Dynamic_dispatch)
    while your code is running.
 
-3. The first type parameter (i.e: ignoring the lifetime parameter) of the [`Parser`] trait is the input type. Inputs
+3. The first type parameter (i.e: ignoring the lifetime parameter) of the [`UnitParser`] trait is the input type. Inputs
    must implement the [`Input`] trait. Examples of inputs include strings, slices, arrays, [`Stream`]s, and much more.
    For now we specify that this parser can only operate upon string slices: but it is also possible to introduce the
    input type as a generic type parameter like `I: Input<'src>` instead if you want your parser to be generic across
    more than just string slices.
 
-4. The associated `Output` type of the [`Parser`] trait is the output type. This is the type of the value that your parser
+4. The associated `Output` type of the [`UnitParser`] trait is the output type. This is the type of the value that your parser
    will eventually give you, assuming that parsing was successful. For now, we just use an output type of [`()`], i.e:
    nothing.
 
@@ -106,9 +106,9 @@ Note that this function only *creates* the parser: it does not, by itself, perfo
 It's all very well creating parsers but in order to write useful programs, we need to invoke them. Chumsky provides
 several functions for this, but the main two are:
 
-- [`Parser::parse`]: parses an input, generating an output value and/or any errors that were encountered along the way
+- [`UnitParser::parse`]: parses an input, generating an output value and/or any errors that were encountered along the way
 
-- [`Parser::check`]: checks that an input is valid, generating any errors that were encountered along the way
+- [`UnitParser::check`]: checks that an input is valid, generating any errors that were encountered along the way
 
 Both functions give us back a [`ParseResult`]. You can think of this sort of like Rust's regular [`Result`] type, except
 it allows both outputs and errors to be generated at the same time (although we won't yet use this functionality). If
@@ -131,7 +131,7 @@ fn test_parser() {
 ```
 
 Hopefully, this code is fairly self-explanatory. We call `parse()` (the function we wrote in the previous section) to
-create an instance of our parsers, and then we call [`Parser::parse`] on it with the desired input to actually do some
+create an instance of our parsers, and then we call [`UnitParser::parse`] on it with the desired input to actually do some
 parsing. The return value is the result of the parse.
 
 From here, the world is your lobster: you can move on to the tutorial sections of this guide or you can jump write into
@@ -161,7 +161,7 @@ error you're struggling to understand, you should:
    unnecessary parts of your parser, or using `.simplify()` on parsers that contribute to the error to simplify their
    types.
 
-3. Complaints about types 'not implementing [`Parser`]' are more often than not a failure to fulfil the obligations that
+3. Complaints about types 'not implementing [`UnitParser`]' are more often than not a failure to fulfil the obligations that
    come with implementing the trait. For example, [`recursive()`] requires that the inner parser implements `Clone`: a
    parser that doesn't (because, say, you moved a non-cloneable type into the closure) can't be used with
    [`recursive()`] and so Rust will translate this, in its parlance, to the type not implementing [`Parser`].
@@ -169,15 +169,15 @@ error you're struggling to understand, you should:
 ### Compilation times
 
 Chumsky's heavy use of Rust's type system can result in parsers taking some time to compile. In particular, a common
-cause of long compilation times are long chains of [`Parser::or`], which sadly tend to produce exponential behaviour in
+cause of long compilation times are long chains of [`UnitParser::or`], which sadly tend to produce exponential behaviour in
 Rust's trait solver.
 
 **Don't fear! There are solutions.**
 
-1. Replace long (more than a handful of cases) [`Parser::or`] chains with [`choice`], which has identical behaviour but
+1. Replace long (more than a handful of cases) [`UnitParser::or`] chains with [`choice`], which has identical behaviour but
    gives Rust's trait solver a much easier time.
 
-2. Use [`Parser::boxed`] at the end of longer parser chains to perform type erasure, thereby reducing the amount of work
+2. Use [`UnitParser::boxed`] at the end of longer parser chains to perform type erasure, thereby reducing the amount of work
    Rust needs to do to understand your parser. If you've been using Rust for a while, your first intention might be to
    feel nauseous as such a suggestion: "*allocation?* In *my* high-performance code? *No thanks*". However, remember
    that this allocation only occurs on parser *creation*, not during the parsing process. A few strategically placed

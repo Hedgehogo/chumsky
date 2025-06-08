@@ -28,14 +28,14 @@ where
     /// such as interned identifiers or position-dependent name resolution, however *cannot* influence
     /// the actual progress of the parser - for that, use [`Self::Context`].
     ///
-    /// For examples of using this type, see [`Parser::map_with`] or [`Parser::foldl_with`].
+    /// For examples of using this type, see [`UnitParser::map_with`] or [`UnitParser::foldl_with`].
     type State: Inspector<'a, I> + 'a;
     /// Context used for parser configuration. This is used to provide context-sensitive parsing of *input*.
     /// Context-sensitive parsing in chumsky is always left-hand sensitive - context for the parse must originate
     /// from an earlier point in the stream than the parser relying on it. This can affect the output of a parser,
     /// but for things that don't wish to alter the actual rules of parsing, one should instead prefer [`Self::State`].
     ///
-    /// For examples of using this type, see [`Parser::ignore_with_ctx`], [`Parser::then_with_ctx`] and [`ConfigParser::configure`].
+    /// For examples of using this type, see [`UnitParser::ignore_with_ctx`], [`UnitParser::then_with_ctx`] and [`ConfigParser::configure`].
     type Context: 'a;
 }
 
@@ -50,7 +50,7 @@ pub type Err<E> = Full<E, DefaultState, DefaultCtx>;
 /// Use `State<S>` or `Full<E, S, C>` as the `Extra` type parameter of a parser to use a custom state type.
 /// You can then use `parser().parse_with_state(&mut S)` to parse with a custom state.
 ///
-/// See [`Parser::map_with`] for examples.
+/// See [`UnitParser::map_with`] for examples.
 pub type State<S> = Full<DefaultErr, S, DefaultCtx>;
 
 /// Use specified context type, but default other types. See [`ParserExtra`] for more details.

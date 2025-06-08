@@ -1,8 +1,8 @@
 use super::*;
 
-impl<'src, T, I, E> Parser<'src, I, E> for &T
+impl<'src, T, I, E> UnitParser<'src, I, E> for &T
 where
-    T: ?Sized + Parser<'src, I, E>,
+    T: ?Sized + UnitParser<'src, I, E>,
     I: Input<'src>,
     E: ParserExtra<'src, I>,
 {

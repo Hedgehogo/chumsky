@@ -215,7 +215,7 @@ where
 
 #[test]
 fn map_tuple() {
-    fn parser<'src, I: Input<'src, Token = char>>() -> impl Parser<'src, I, Output = char> {
+    fn parser<'src, I: Input<'src, Token = char>>() -> impl Parser<'src, I, char> {
         just('h')
     }
 

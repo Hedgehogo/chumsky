@@ -14,7 +14,7 @@ This section is mostly a glossary of terms and concepts. Feel free to skip to th
 
 - [API features](#api-features)
 
-    - [The `Parser` trait](#the-parser-trait)
+    - [The `UnitParser` trait](#the-parsergo-trait)
 
     - [The `Input` trait](#the-input-trait)
 
@@ -88,12 +88,12 @@ Chumsky comes with several [`primitive`] parsers that each perform a specific jo
 
 # API features
 
-## The [`Parser`] trait
+## The [`UnitParser`] trait
 
-A fundamental concept in chumsky is that of the [`Parser`] trait. All parser (both combinators and primitives) implement
+A fundamental concept in chumsky is that of the [`UnitParser`] trait. All parser (both combinators and primitives) implement
 it and the combinator methods on it are the primary way through which a parser is defined.
 
-[`Parser`] also provides several *invocation* methods such as [`Parser::parse`] and [`Parser::check`]: these functions
+[`Parser`] also provides several *invocation* methods such as [`UnitParser::parse`] and [`UnitParser::check`]: these functions
 allow you to actually give inputs to your parser and have it generate outputs and/or errors.
 
 Check out the [`primitive`], [`combinator`], [`mod@recursive`], and [`mod@regex`] modules for examples of some of the parsers
@@ -151,7 +151,7 @@ error types that have different tradeoffs:
 
     - A list of tokens or patterns that were expected at the span location instead
 
-[`Rich`] also supports many additional features such as custom error messages, labelling (see [`Parser::labelled`]) and
+[`Rich`] also supports many additional features such as custom error messages, labelling (see [`UnitParser::labelled`]) and
 error merging.
 
 Obviously, errors that express more detailed information are also slower to generate and hence reduce the performance of
@@ -172,4 +172,4 @@ the [`Span`] trait. Additionally, chumsky comes with a built-in span type, [`Sim
 implementations for types in Rust's standard library such as [`std::ops::Range<usize>`].
 
 Chumsky will use its internal knowledge of your parser to generate spans for you whenever you need them, such as for
-attaching to nodes of an abstract syntax tree. See [`Parser::map_with`] for more information.
+attaching to nodes of an abstract syntax tree. See [`UnitParser::map_with`] for more information.

@@ -19,11 +19,11 @@ macro_rules! go_extra {
     ( $O :ty ) => {
         #[inline(always)]
         fn go_emit(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Emit, $O> {
-            Parser::<I, E>::go::<Emit>(self, inp)
+            UnitParser::<I, E>::go::<Emit>(self, inp)
         }
         #[inline(always)]
         fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, $O> {
-            Parser::<I, E>::go::<Check>(self, inp)
+            UnitParser::<I, E>::go::<Check>(self, inp)
         }
     };
 }
@@ -80,7 +80,7 @@ pub mod prelude {
         recovery::{nested_delimiters, skip_then_retry_until, skip_until, via_parser},
         recursive::{recursive, Recursive},
         span::{SimpleSpan, Span as _},
-        text, Boxed, ConfigIterParser, ConfigParser, IterParser, ParseResult, Parser,
+        text, Boxed, ConfigIterParser, ConfigParser, IterParser, ParseResult, Parser, UnitParser,
     };
     pub use crate::{select, select_ref};
 }
@@ -156,7 +156,7 @@ impl<T> Unpin for EmptyPhantom<T> {}
 impl<T> core::panic::UnwindSafe for EmptyPhantom<T> {}
 impl<T> core::panic::RefUnwindSafe for EmptyPhantom<T> {}
 
-pub(crate) type DynParser<'src, 'b, I, O, E> = dyn Parser<'src, I, E, Output = O> + 'b;
+pub(crate) type DynParser<'src, 'b, I, O, E> = dyn UnitParser<'src, I, E, Output = O> + 'b;
 #[cfg(feature = "pratt")]
 pub(crate) type DynOperator<'src, 'b, I, O, E> = dyn pratt::Operator<'src, I, O, E> + 'b;
 
@@ -194,7 +194,7 @@ impl<T> DefaultExpected<'_, T> {
 ///
 /// Unlike `Result`, this type is designed to express the fact that generating outputs and errors are not
 /// mutually-exclusive operations: it is possible for a parse to produce non-terminal errors (see
-/// [`Parser::recover_with`] while still producing useful output).
+/// [`UnitParser::recover_with`] while still producing useful output).
 ///
 /// If you don't care for recovered outputs and you with to treat success/failure as a binary, you may use
 /// [`ParseResult::into_result`].
@@ -248,7 +248,7 @@ impl<T, E> ParseResult<T, E> {
     }
 
     /// Convert this `ParseResult` into a standard `Result`. This discards output if parsing generated any errors,
-    /// matching the old behavior of [`Parser::parse`].
+    /// matching the old behavior of [`UnitParser::parse`].
     pub fn into_result(self) -> Result<T, Vec<E>> {
         if self.errs.is_empty() {
             self.output.ok_or(self.errs)
@@ -302,7 +302,7 @@ impl<T, E> ParseResult<T, E> {
 /// it, doing so is considered to be outside the stability guarantees of the crate. Your code may break with a future,
 /// semver-compatible release! Instead of implementing this trait, you should consider other options:
 ///
-/// 1) Try using combinators like [`Parser::try_map`] and [`Parser::validate`] to implement custom error generation
+/// 1) Try using combinators like [`UnitParser::try_map`] and [`UnitParser::validate`] to implement custom error generation
 ///
 /// 2) Use [`custom`] to implement your own parsing logic inline within an existing parser
 ///
@@ -310,15 +310,7 @@ impl<T, E> ParseResult<T, E> {
 ///
 /// 4) If you believe you've found a common use-case that's missing from chumsky, you could open a pull request to
 ///    implement it in chumsky itself rather than implementing `Parser` yourself.
-// #[cfg_attr(
-//     feature = "nightly",
-//     diagnostic::on_unimplemented(
-//         message = "The following is not a parser from `{I}` to `{O}`: `{Self}`",
-//         label = "This parser is not compatible because it does not implement `Parser<{I}, {O}, E>`",
-//         note = "You should check that the output types of your parsers are consistent with the combinators you're using",
-//     )
-// )]
-pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default> {
+pub trait UnitParser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default> {
     /// This is the type of the value that your parser will eventually give you, assuming that parsing was successful.
     type Output;
 
@@ -329,13 +321,14 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
 
     #[doc(hidden)]
     fn go_emit(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Emit, Self::Output>;
+
     #[doc(hidden)]
     fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, Self::Output>;
 
     /// Parse a stream of tokens, yielding an output if possible, and any errors encountered along the way.
     ///
     /// If `None` is returned (i.e: parsing failed) then there will *always* be at least one item in the error `Vec`.
-    /// If you want to include non-default state, use [`Parser::parse_with_state`] instead.
+    /// If you want to include non-default state, use [`UnitParser::parse_with_state`] instead.
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
@@ -352,7 +345,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// The provided state will be passed on to parsers that expect it, such as [`map_with`](Parser::map_with).
     ///
     /// If `None` is returned (i.e: parsing failed) then there will *always* be at least one item in the error `Vec`.
-    /// If you want to just use a default state value, use [`Parser::parse`] instead.
+    /// If you want to just use a default state value, use [`UnitParser::parse`] instead.
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
@@ -387,7 +380,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// Parse a stream of tokens, ignoring any output, and returning any errors encountered along the way.
     ///
     /// If parsing failed, then there will *always* be at least one item in the returned `Vec`.
-    /// If you want to include non-default state, use [`Parser::check_with_state`] instead.
+    /// If you want to include non-default state, use [`UnitParser::check_with_state`] instead.
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
@@ -404,7 +397,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// Parse a stream of tokens, ignoring any output, and returning any errors encountered along the way.
     ///
     /// If parsing failed, then there will *always* be at least one item in the returned `Vec`.
-    /// If you want to just use a default state value, use [`Parser::check`] instead.
+    /// If you want to just use a default state value, use [`UnitParser::check`] instead.
     ///
     /// Although the signature of this function looks complicated, it's simpler than you think! You can pass a
     /// [`&[T]`], a [`&str`], [`Stream`], or anything implementing [`Input`] to it.
@@ -438,7 +431,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     ///
     /// Note: unlike the parser `.repeated().collect()`, this method includes all tokens that are
     /// "ignored" by the parser, including any padding, separators, and sub-parsers with
-    /// [`Parser::ignored`], [`Parser::ignore_then`], and [`Parser::then_ignore`].
+    /// [`UnitParser::ignored`], [`UnitParser::ignore_then`], and [`UnitParser::then_ignore`].
     ///
     /// # Examples
     /// Example with input of type `&str` (token type is `char`).
@@ -607,7 +600,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// ```
     /// # use chumsky::{prelude::*, error::Simple};
     ///
-    /// fn palindrome_parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
+    /// fn palindrome_parser<'src>() -> impl Parser<'src, &'src str, String> {
     ///     recursive(|chain| {
     ///         choice((
     ///             just(String::new())
@@ -638,7 +631,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     }
 
     /// Map the output of this parser to another value.
-    /// If the output of this parser isn't a tuple, use [`Parser::map`].
+    /// If the output of this parser isn't a tuple, use [`UnitParser::map`].
     ///
     /// The output type of this parser is `U`, the same as the function's output.
     ///
@@ -785,7 +778,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// as a parsing error.
     ///
     /// If you wish parsing of this pattern to continue when an error is generated instead of halting, consider using
-    /// [`Parser::validate`] instead.
+    /// [`UnitParser::validate`] instead.
     ///
     /// The output type of this parser is `U`, the [`Ok`] return value of the function.
     ///
@@ -818,7 +811,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// If the function produces an error, treat it as a parsing error.
     ///
     /// If you wish parsing of this pattern to continue when an error is generated instead of halting, consider using
-    /// [`Parser::validate`] instead.
+    /// [`UnitParser::validate`] instead.
     ///
     /// The output type of this parser is `U`, the [`Ok`] return value of the function.
     fn try_map_with<U, F>(self, f: F) -> TryMapWith<Self, F, U>
@@ -952,7 +945,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn then<U, B>(self, other: B) -> Then<Self, Self::Output, B, U, E>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         Then {
             parser_a: self,
@@ -987,7 +980,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn ignore_then<U, B>(self, other: B) -> IgnoreThen<Self, B, E, U>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         IgnoreThen {
             parser_a: self,
@@ -1034,7 +1027,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn then_ignore<U, B>(self, other: B) -> ThenIgnore<Self, B, E, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         ThenIgnore {
             parser_a: self,
@@ -1047,7 +1040,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// input. In other words, this parser will attempt to create a *new* input stream from within
     /// the one it is being run on, and the parser it was called on will be provided this *new* input.
     /// By default, the original parser is expected to consume up to the end of the new stream. To
-    /// allow only consuming part of the stream, use [`Parser::lazy`] to ignore trailing tokens.
+    /// allow only consuming part of the stream, use [`UnitParser::lazy`] to ignore trailing tokens.
     ///
     /// The provided parser `P` is expected to have both an input and output type which match the input
     /// type of the parser it is called on. As an example, if the original parser takes an input of
@@ -1102,7 +1095,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
         I: 'src,
         J: Input<'src>,
         F: ParserExtra<'src, J>,
-        B: Parser<'src, J, F, Output = I>,
+        B: UnitParser<'src, J, F, Output = I>,
     {
         NestedIn {
             parser_a: self,
@@ -1112,7 +1105,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     }
 
     /// Parse one thing and then another thing, creating the second parser from the result of
-    /// the first. If you do need the context in the output, use [`Parser::then_with_ctx`].
+    /// the first. If you do need the context in the output, use [`UnitParser::then_with_ctx`].
     ///
     /// The output of this parser is `U`, the result of the second parser
     ///
@@ -1141,7 +1134,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     where
         Self: Sized,
         Self::Output: 'src,
-        P: Parser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
+        P: UnitParser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
     {
         IgnoreWithCtx {
             parser: self,
@@ -1151,7 +1144,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     }
 
     /// Parse one thing and then another thing, creating the second parser from the result of
-    /// the first. If you don't need the context in the output, prefer [`Parser::ignore_with_ctx`].
+    /// the first. If you don't need the context in the output, prefer [`UnitParser::ignore_with_ctx`].
     ///
     /// The output of this parser is `(E::Context, O)`,
     /// a combination of the context and the output of the parser.
@@ -1167,7 +1160,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     where
         Self: Sized,
         Self::Output: 'src,
-        P: Parser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
+        P: UnitParser<'src, I, extra::Full<E::Error, E::State, Self::Output>, Output = U>,
     {
         ThenWithCtx {
             parser: self,
@@ -1231,7 +1224,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// The second parser is allowed to consume more or less input than the first parser,
     /// but like its output, how much it consumes won't affect the final result.
     ///
-    /// The motivating use-case is in combination with [`Parser::not`], allowing a parser
+    /// The motivating use-case is in combination with [`UnitParser::not`], allowing a parser
     /// to consume something only if it isn't also something like an escape sequence or a nested block.
     ///
     /// # Examples
@@ -1261,7 +1254,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn and_is<U, B>(self, other: B) -> AndIs<Self, B, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         AndIs {
             parser_a: self,
@@ -1321,8 +1314,8 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn delimited_by<U, V, B, C>(self, start: B, end: C) -> DelimitedBy<Self, B, C, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
-        C: Parser<'src, I, E, Output = V>,
+        B: UnitParser<'src, I, E, Output = U>,
+        C: UnitParser<'src, I, E, Output = V>,
     {
         DelimitedBy {
             parser: self,
@@ -1351,7 +1344,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn padded_by<U, B>(self, padding: B) -> PaddedBy<Self, B, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         PaddedBy {
             parser: self,
@@ -1372,7 +1365,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// used is left unspecified, and is not part of the crate's semver guarantees, although regressions in error
     /// quality should be reported in the issue tracker of the main repository.
     ///
-    /// Please note that long chains of [`Parser::or`] combinators have been known to result in poor compilation times.
+    /// Please note that long chains of [`UnitParser::or`] combinators have been known to result in poor compilation times.
     /// If you feel you are experiencing this, consider using [`choice`] instead.
     ///
     /// The output type of this parser is `Output`, the output of both parsers.
@@ -1393,7 +1386,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn or<B>(self, other: B) -> Or<Self, B, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = Self::Output>,
+        B: UnitParser<'src, I, E, Output = Self::Output>,
     {
         Or {
             choice: choice((self, other)),
@@ -1435,7 +1428,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// Invert the result of the contained parser, failing if it succeeds and succeeding if it fails.
     /// The output of this parser is always `()`, the unit type.
     ///
-    /// The motivating case for this is in combination with [`Parser::and_is`], allowing a parser
+    /// The motivating case for this is in combination with [`UnitParser::and_is`], allowing a parser
     /// to consume something only if it isn't also something like an escape sequence or a nested block.
     ///
     /// Caveats:
@@ -1563,7 +1556,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     fn separated_by<U, B>(self, separator: B) -> SeparatedBy<Self, B, I, E, Self::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = U>,
+        B: UnitParser<'src, I, E, Output = U>,
     {
         SeparatedBy {
             parser: self,
@@ -1926,10 +1919,10 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// potentially emitting one or more other errors, only failing after the pattern has otherwise
     /// successfully, or emitted another terminal error.
     ///
-    /// This function also permits mapping the output to a value of another type, similar to [`Parser::map`].
+    /// This function also permits mapping the output to a value of another type, similar to [`UnitParser::map`].
     ///
     /// If you wish parsing of this pattern to halt when an error is generated instead of continuing, consider using
-    /// [`Parser::try_map`] instead.
+    /// [`UnitParser::try_map`] instead.
     ///
     /// The output type of this parser is `U`, the result of the validation closure.
     ///
@@ -1949,7 +1942,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// assert!(large_int.parse("243").into_result().is_err());
     /// ```
     ///
-    /// To show the difference in behavior from [`Parser::try_map`]:
+    /// To show the difference in behavior from [`UnitParser::try_map`]:
     ///
     /// ```
     /// # use chumsky::{text::TextExpected, util::MaybeRef, error::LabelError, prelude::*};
@@ -2127,7 +2120,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// ```
     fn into_iter(
         self,
-    ) -> IntoIter<Self, <<Self as Parser<'src, I, E>>::Output as IntoIterator>::Item>
+    ) -> IntoIter<Self, <<Self as UnitParser<'src, I, E>>::Output as IntoIterator>::Item>
     where
         Self: Sized,
         Self::Output: IntoIterator,
@@ -2215,7 +2208,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     ///
     /// ```
     /// # use chumsky::prelude::*;
-    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, Output = char>> { [just('b'), just('c')] }
+    /// # fn user_input<'src>() -> impl IntoIterator<Item = impl Parser<'src, &'src str, char>> { [just('b'), just('c')] }
     /// let user_input = user_input();
     /// let mut parser = just('a').boxed();
     /// for i in user_input {
@@ -2240,7 +2233,7 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     /// The only reason for using this function is to make Rust's compiler errors easier to debug: it does not change
     /// the behaviour of the parser at all, and is in fact just a simple identity function.
     #[cfg(feature = "nightly")]
-    fn simplify(self) -> impl Parser<'src, I, E, Output = Self::Output>
+    fn simplify(self) -> impl UnitParser<'src, I, E, Output = Self::Output>
     where
         Self: Sized + 'src,
     {
@@ -2329,8 +2322,34 @@ pub trait Parser<'src, I: Input<'src>, E: ParserExtra<'src, I> = extra::Default>
     }
 }
 
+/// An alias for [`UnitParser`], making `Output` a parameter.
+///
+/// See [`UnitParser`].
+// #[cfg_attr(
+//     feature = "nightly",
+//     diagnostic::on_unimplemented(
+//         message = "The following is not a parser from `{I}` to `{O}`: `{Self}`",
+//         label = "This parser is not compatible because it does not implement `Parser<{I}, {O}, E>`",
+//         note = "You should check that the output types of your parsers are consistent with the combinators you're using",
+//     )
+// )]
+pub trait Parser<'src, I, O, E = extra::Default>: UnitParser<'src, I, E, Output = O>
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+{
+}
+
+impl<'src, I, O, E, P> Parser<'src, I, O, E> for P
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    P: UnitParser<'src, I, E, Output = O>,
+{
+}
+
 #[cfg(feature = "nightly")]
-impl<'src, I, E> Parser<'src, I, E> for !
+impl<'src, I, E> UnitParser<'src, I, E> for !
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2352,7 +2371,7 @@ where
 ///
 /// Chumsky distinguishes 'state' from 'context'. State is not able to change what input a parser
 /// accepts, but may be used to change the contents of the type it emits. In this way state is expected
-/// to be idempotent - combinators such as [`Parser::map_with`] are allowed to not call the
+/// to be idempotent - combinators such as [`UnitParser::map_with`] are allowed to not call the
 /// provided closure at all if they don't emit any output. Context and configuration, on the other hand,
 /// is used to change what kind of input a parser may accept, and thus must always be evaluated. Context
 /// isn't usable in any map combinator however - while it may affect accepted input, it is not expected
@@ -2360,7 +2379,7 @@ where
 ///
 /// Not all parsers currently support configuration. If you feel like you need a parser to be configurable
 /// and it isn't currently, please open an issue on the issue tracker of the main repository.
-pub trait ConfigParser<'src, I, E>: Parser<'src, I, E>
+pub trait ConfigParser<'src, I, E>: UnitParser<'src, I, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2395,7 +2414,7 @@ where
     }
 
     /// A combinator that allows configuration of the parser from the current context. Context
-    /// is most often derived from [`Parser::ignore_with_ctx`], [`Parser::then_with_ctx`] or [`map_ctx`],
+    /// is most often derived from [`UnitParser::ignore_with_ctx`], [`UnitParser::then_with_ctx`] or [`map_ctx`],
     /// and is how chumsky supports parsing things such as indentation-sensitive grammars.
     ///
     /// # Examples
@@ -2656,7 +2675,7 @@ where
     fn foldr<B, F, OB>(self, other: B, f: F) -> Foldr<F, Self, B, E, B::Output>
     where
         F: Fn(Self::Item, B::Output) -> B::Output,
-        B: Parser<'src, I, E, Output = OB>,
+        B: UnitParser<'src, I, E, Output = OB>,
         Self: Sized,
     {
         Foldr {
@@ -2704,7 +2723,7 @@ where
     fn foldr_with<B, F, OB>(self, other: B, f: F) -> FoldrWith<F, Self, B, E, B::Output>
     where
         Self: Sized,
-        B: Parser<'src, I, E, Output = OB>,
+        B: UnitParser<'src, I, E, Output = OB>,
         F: Fn(Self::Item, B::Output, &mut MapExtra<'src, '_, I, E>) -> B::Output,
     {
         FoldrWith {
@@ -2829,7 +2848,7 @@ where
     }
 }
 
-/// See [`Parser::boxed`].
+/// See [`UnitParser::boxed`].
 ///
 /// Due to current implementation details, the inner value is not, in fact, a [`Box`], but is an [`Rc`] to facilitate
 /// efficient cloning. This is likely to change in the future. Unlike [`Box`], [`Rc`] has no size guarantees: although
@@ -2847,7 +2866,7 @@ impl<'src, I: Input<'src>, O, E: ParserExtra<'src, I>> Clone for Boxed<'src, '_,
     }
 }
 
-impl<'src, I, O, E> Parser<'src, I, E> for Boxed<'src, '_, I, O, E>
+impl<'src, I, O, E> UnitParser<'src, I, E> for Boxed<'src, '_, I, O, E>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -2870,11 +2889,11 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::boxed::Box<T>
+impl<'src, I, E, T> UnitParser<'src, I, E> for ::alloc::boxed::Box<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, E>,
+    T: UnitParser<'src, I, E>,
 {
     type Output = T::Output;
 
@@ -2889,11 +2908,11 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::rc::Rc<T>
+impl<'src, I, E, T> UnitParser<'src, I, E> for ::alloc::rc::Rc<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, E>,
+    T: UnitParser<'src, I, E>,
 {
     type Output = T::Output;
 
@@ -2908,11 +2927,11 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, I, E, T> Parser<'src, I, E> for ::alloc::sync::Arc<T>
+impl<'src, I, E, T> UnitParser<'src, I, E> for ::alloc::sync::Arc<T>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    T: Parser<'src, I, E>,
+    T: UnitParser<'src, I, E>,
 {
     type Output = T::Output;
 
@@ -2931,9 +2950,9 @@ where
 ///
 /// This is most useful when turning the tokens of a previous compilation pass (such as lexing) into data that can be
 /// used for parsing, although it can also generally be used to select inputs and map them to outputs. Any unmapped
-/// input patterns will become syntax errors, just as with [`Parser::filter`].
+/// input patterns will become syntax errors, just as with [`UnitParser::filter`].
 ///
-/// Internally, [`select!`] is very similar to a single-token [`Parser::filter`] and thinking of it as such might make
+/// Internally, [`select!`] is very similar to a single-token [`UnitParser::filter`] and thinking of it as such might make
 /// it less confusing.
 ///
 /// `select!` requires that tokens implement [`Clone`] and the input type implements [`ValueInput`]. If you're trying
@@ -2963,7 +2982,7 @@ where
 /// ```
 ///
 /// If you require access to the token's span or other metadata, you may add an argument after a pattern to gain access
-/// to it (see the docs for [`Parser::map_with`] and [`MapExtra`]):
+/// to it (see the docs for [`UnitParser::map_with`] and [`MapExtra`]):
 ///
 /// ```
 /// # use chumsky::{prelude::*, error::Simple};
@@ -3082,7 +3101,7 @@ mod tests {
         type Span = SimpleSpan<usize, FileId>;
 
         fn parser<'src>(
-        ) -> impl Parser<'src, WithContext<Span, &'src str>, Output = [(Span, Token<'src>); 6]>
+        ) -> impl UnitParser<'src, WithContext<Span, &'src str>, Output = [(Span, Token<'src>); 6]>
         {
             let ident = any()
                 .filter(|c: &char| c.is_alphanumeric())
@@ -3136,7 +3155,7 @@ mod tests {
         type FileId<'src> = &'src str;
         type Span<'src> = SimpleSpan<usize, FileId<'src>>;
 
-        fn parser<'src, I>() -> impl Parser<'src, I, Output = [(Span<'src>, Token<'src>); 6]>
+        fn parser<'src, I>() -> impl UnitParser<'src, I, Output = [(Span<'src>, Token<'src>); 6]>
         where
             I: ValueInput<'src, Token = char, Span = Span<'src>>
                 + SliceInput<'src, Slice = &'src str>,
@@ -3187,7 +3206,7 @@ mod tests {
     fn zero_copy_repetition() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
             any()
                 .filter(|c: &char| c.is_ascii_digit())
                 .repeated()
@@ -3224,7 +3243,7 @@ mod tests {
     fn zero_copy_group() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = (&'src str, u64, char)> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, (&'src str, u64, char)> {
             group((
                 any()
                     .filter(|c: &char| c.is_ascii_alphabetic())
@@ -3265,7 +3284,7 @@ mod tests {
     fn zero_copy_group_array() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = [char; 3]> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, [char; 3]> {
             group([just('a'), just('b'), just('c')])
         }
 
@@ -3303,7 +3322,7 @@ mod tests {
     fn exponential() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, String> {
             recursive(|expr| {
                 let atom = any()
                     .filter(|c: &char| c.is_alphabetic())
@@ -3333,7 +3352,7 @@ mod tests {
     fn left_recursive() {
         use crate::prelude::*;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = String> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, String> {
             recursive(|expr| {
                 let atom = any()
                     .filter(|c: &char| c.is_alphabetic())
@@ -3512,7 +3531,7 @@ mod tests {
 
     #[test]
     fn box_impl() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
             Box::new(
                 any()
                     .filter(|c: &char| c.is_ascii_digit())
@@ -3547,7 +3566,7 @@ mod tests {
     fn rc_impl() {
         use alloc::rc::Rc;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<u64>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<u64>> {
             Rc::new(
                 any()
                     .filter(|c: &char| c.is_ascii_digit())
@@ -3607,7 +3626,7 @@ mod tests {
     #[test]
     fn err_prio_0() {
         #[allow(dead_code)]
-        fn always_err<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()> {
+        fn always_err<'src>() -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
             empty().try_map(|_, _| Err(MyErr("special")))
         }
 
@@ -3620,8 +3639,8 @@ mod tests {
     #[test]
     fn err_prio_1() {
         #[allow(dead_code)]
-        fn always_err_choice<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()>
-        {
+        fn always_err_choice<'src>(
+        ) -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
             choice((just("something").ignored(), empty())).try_map(|_, _| Err(MyErr("special")))
         }
 
@@ -3633,7 +3652,7 @@ mod tests {
 
     #[test]
     fn into_iter_no_error() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = ()> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, (), extra::Err<MyErr>> {
             let many_as = just('a')
                 .ignored()
                 .repeated()
@@ -3649,7 +3668,7 @@ mod tests {
     #[cfg(feature = "nightly")]
     #[test]
     fn flatten() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<MyErr>, Output = Vec<char>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<char>, extra::Err<MyErr>> {
             let many_as = just('a')
                 .map(Some)
                 .or(any().to(None))
@@ -3668,7 +3687,7 @@ mod tests {
 
     #[test]
     fn iterable_then() {
-        fn parser<'src>() -> impl Parser<'src, &'src str, Output = Vec<char>> {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<char>> {
             just('a')
                 .map(Some)
                 .into_iter()
@@ -3688,7 +3707,7 @@ mod tests {
     #[test]
     #[cfg(feature = "unstable")]
     fn cached() {
-        fn my_parser<'src>() -> impl Parser<'src, &'src str, extra::Default, Output = &'src str> {
+        fn my_parser<'src>() -> impl Parser<'src, &'src str, &'src str, extra::Default> {
             any().repeated().exactly(5).to_slice()
         }
 
@@ -3698,7 +3717,7 @@ mod tests {
             type Parser<'src> = Boxed<'src, 'src, &'src str, &'src str, extra::Default>;
 
             fn make_parser<'src>(self) -> Self::Parser<'src> {
-                Parser::boxed(my_parser())
+                UnitParser::boxed(my_parser())
             }
         }
 
@@ -3733,7 +3752,7 @@ mod tests {
         enum Token {}
         enum Expr {}
 
-        fn expr<'src, I>() -> impl Parser<'src, I, Output = (Expr, SimpleSpan)> + 'src
+        fn expr<'src, I>() -> impl UnitParser<'src, I, Output = (Expr, SimpleSpan)> + 'src
         where
             I: Input<'src, Token = Token, Span = SimpleSpan> + 'src,
         {
@@ -3745,8 +3764,8 @@ mod tests {
     fn label() {
         use crate::label::LabelError;
 
-        fn parser<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()>
-        {
+        fn parser<'src>(
+        ) -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
             just("hello").labelled("greeting").as_context().ignored()
         }
 
@@ -3766,8 +3785,8 @@ mod tests {
         <Rich<_, _> as LabelError<&str, _>>::in_context(&mut err, "greeting", (0..3).into());
         assert_eq!(parser().parse("help").into_errors(), vec![err]);
 
-        fn parser2<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()>
-        {
+        fn parser2<'src>(
+        ) -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
             text::keyword("hello")
                 .labelled("greeting")
                 .as_context()
@@ -3786,7 +3805,7 @@ mod tests {
         use crate::LabelError;
 
         fn string<'src>(
-        ) -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = &'src str>
+        ) -> impl UnitParser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = &'src str>
         {
             let quote = just("\"");
             let escaped = just("\\").then(just("n"));
@@ -3817,7 +3836,8 @@ mod tests {
     fn map_err_missed_info() {
         use crate::LabelError;
 
-        fn zero<'src>() -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()> {
+        fn zero<'src>() -> impl UnitParser<'src, &'src str, extra::Err<Rich<'src, char>>, Output = ()>
+        {
             just("-")
                 .or_not()
                 .then(just("0").map_err(move |e: Rich<_>| {
@@ -3869,7 +3889,7 @@ mod tests {
 
     #[test]
     fn zero_size_custom_failure() {
-        fn my_custom<'src>() -> impl Parser<'src, &'src str, Output = ()> {
+        fn my_custom<'src>() -> impl Parser<'src, &'src str, ()> {
             custom(|inp| {
                 let check = inp.save();
                 if inp.parse(just("foo")).is_err() {

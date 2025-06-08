@@ -25,7 +25,7 @@ and invoked in a lazy manner. Intuitively, we might think to write a recursive p
 ```rust compile_fail
 use chumsky::prelude::*;
 
-fn a_parser<'src>() -> impl Parser<'src, &'src str, Output = i32> + Clone {
+fn a_parser<'src>() -> impl Parser<'src, &'src str, i32> + Clone {
     let int = text::int(10).map(|s: &str| s.parse().unwrap());
 
     let atom = choice((
@@ -47,7 +47,7 @@ Unfortunately, we hit an error:
 error[E0720]: cannot resolve opaque type
    --> recursion.rs:1:24
     |
- 1  |   fn a_parser<'src>() -> impl Parser<'src, &'src str, Output = i32> + Clone {
+ 1  |   fn a_parser<'src>() -> impl Parser<'src, &'src str, i32> + Clone {
     |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ recursive opaque type
 ...
  9  | /     atom.clone().foldl(
@@ -72,7 +72,7 @@ refer to a parser within its own definition - without getting us caught in recur
 ```rust
 use chumsky::prelude::*;
 
-fn a_parser<'src>() -> impl Parser<'src, &'src str, Output = i32> {
+fn a_parser<'src>() -> impl Parser<'src, &'src str, i32> {
     recursive(|a_parser| {
         let int = text::int(10).map(|s: &str| s.parse().unwrap());
 

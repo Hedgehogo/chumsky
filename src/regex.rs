@@ -27,7 +27,7 @@ pub fn regex<'p, I, E, S: ?Sized + 'p>(pattern: &'p str) -> Regex<I, E, &'p S> {
     }
 }
 
-impl<'src, 'p, I, E, S> Parser<'src, I, E> for Regex<I, E, &'p S>
+impl<'src, 'p, I, E, S> UnitParser<'src, I, E> for Regex<I, E, &'p S>
 where
     I: StrInput<'src, Slice = &'src S>,
     I::Token: Char,
@@ -77,7 +77,7 @@ mod tests {
         use self::prelude::*;
         use self::regex::*;
 
-        fn parser<'src, S, I>() -> impl Parser<'src, I, Output = Vec<&'src S>>
+        fn parser<'src, S, I>() -> impl UnitParser<'src, I, Output = Vec<&'src S>>
         where
             S: ?Sized + AsRef<[u8]> + 'src,
             I: StrInput<'src, Slice = &'src S>,

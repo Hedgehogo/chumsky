@@ -15,7 +15,7 @@ pub enum Json {
     Object(HashMap<String, Json>),
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Output = Json> {
+fn parser<'a>() -> impl Parser<'a, &'a str, Json> {
     recursive(|value| {
         let digits = text::digits(10).to_slice();
 

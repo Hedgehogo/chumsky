@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// A trait implemented by [`Error`]s that can originate from labelled parsers. See [`Parser::labelled`].
+/// A trait implemented by [`Error`]s that can originate from labelled parsers. See [`UnitParser::labelled`].
 pub trait LabelError<'src, I: Input<'src>, L>: Sized {
     /// Create a new error describing a conflict between expected inputs and that which was actually found.
     ///
@@ -58,7 +58,7 @@ pub trait LabelError<'src, I: Input<'src>, L>: Sized {
     }
 }
 
-/// See [`Parser::labelled`].
+/// See [`UnitParser::labelled`].
 #[derive(Copy, Clone)]
 pub struct Labelled<A, L> {
     pub(crate) parser: A,
@@ -78,11 +78,11 @@ impl<A, L> Labelled<A, L> {
     }
 }
 
-impl<'src, I, E, A, L> Parser<'src, I, E> for Labelled<A, L>
+impl<'src, I, E, A, L> UnitParser<'src, I, E> for Labelled<A, L>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
     L: Clone,
     E::Error: LabelError<'src, I, L>,
 {

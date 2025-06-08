@@ -49,7 +49,7 @@ impl fmt::Display for Token<'_> {
 pub type Spanned<T> = (T, SimpleSpan);
 
 fn lexer<'src>(
-) -> impl Parser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char>>> {
+) -> impl UnitParser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char>>> {
     recursive(|token| {
         choice((
             // Keywords
@@ -111,7 +111,7 @@ pub enum Expr<'src> {
 
 fn parser<'tokens, 'src: 'tokens, I, M>(
     make_input: M,
-) -> impl Parser<'tokens, I, Spanned<Expr<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
+) -> impl UnitParser<'tokens, I, Spanned<Expr<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: BorrowInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
     // Because this function is generic over the input type, we need the caller to tell us how to create a new input,

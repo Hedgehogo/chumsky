@@ -89,7 +89,7 @@ mod chumsky_zero_copy {
 
     type Error<'a> = EmptyErr;
 
-    pub fn cbor<'a>() -> impl Parser<'a, &'a [u8], extra::Err<Error<'a>>, Output = CborZero<'a>> {
+    pub fn cbor<'a>() -> impl Parser<'a, &'a [u8], CborZero<'a>, extra::Err<Error<'a>>> {
         recursive(|data| {
             let take = |n: u8| any().map(move |x| x % (1 << n));
             let int = |bytes| {

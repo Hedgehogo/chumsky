@@ -47,7 +47,7 @@ impl fmt::Display for Token<'_> {
 }
 
 fn lexer<'src>(
-) -> impl Parser<'src, &'src str, extra::Err<Rich<'src, char, Span>>, Output = Vec<Spanned<Token<'src>>>> {
+) -> impl Parser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char, Span>>> {
     // A parser for numbers
     let num = text::int(10)
         .then(just('.').then(text::digits(10)).or_not())
@@ -179,7 +179,7 @@ struct Func<'src> {
 }
 
 fn expr_parser<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, extra::Err<Rich<'tokens, Token<'src>, Span>>, Output = Spanned<Expr<'src>>> + Clone
+) -> impl UnitParser<'tokens, I, extra::Err<Rich<'tokens, Token<'src>, Span>>, Output = Spanned<Expr<'src>>> + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
@@ -387,7 +387,7 @@ where
     })
 }
 
-fn funcs_parser<'tokens, 'src: 'tokens, I>() -> impl Parser<
+fn funcs_parser<'tokens, 'src: 'tokens, I>() -> impl UnitParser<
     'tokens,
     I,
     extra::Err<Rich<'tokens, Token<'src>, Span>>,

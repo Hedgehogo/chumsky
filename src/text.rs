@@ -192,12 +192,12 @@ pub struct Padded<A> {
     pub(crate) parser: A,
 }
 
-impl<'src, I, E, A> Parser<'src, I, E> for Padded<A>
+impl<'src, I, E, A> UnitParser<'src, I, E> for Padded<A>
 where
     I: ValueInput<'src>,
     E: ParserExtra<'src, I>,
     I::Token: Char,
-    A: Parser<'src, I, E>,
+    A: UnitParser<'src, I, E>,
 {
     type Output = A::Output;
 
@@ -253,7 +253,7 @@ where
 /// // ...including none at all!
 /// assert_eq!(whitespace.parse("").into_result(), Ok(()));
 /// ```
-pub fn whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, I, E, ()>
+pub fn whitespace<'src, I, E>() -> Repeated<impl UnitParser<'src, I, E, Output = ()> + Copy, I, E, ()>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -294,7 +294,7 @@ where
 /// // ... but not newlines
 /// assert!(inline_whitespace.at_least(1).parse("\n\r").has_errors());
 /// ```
-pub fn inline_whitespace<'src, I, E>() -> Repeated<impl Parser<'src, I, E, Output = ()> + Copy, I, E, ()>
+pub fn inline_whitespace<'src, I, E>() -> Repeated<impl UnitParser<'src, I, E, Output = ()> + Copy, I, E, ()>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -347,7 +347,7 @@ where
 /// assert_eq!(newline.parse("\u{2029}").into_result(), Ok(()));
 /// ```
 #[must_use]
-pub fn newline<'src, I, E>() -> impl Parser<'src, I, E, Output = ()> + Copy
+pub fn newline<'src, I, E>() -> impl UnitParser<'src, I, E, Output = ()> + Copy
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -410,7 +410,7 @@ where
 #[must_use]
 pub fn digits<'src, I, E>(
     radix: u32,
-) -> Repeated<impl Parser<'src, I, E, Output = <I as Input<'src>>::Token> + Copy, I, E, <I as Input<'src>>::Token>
+) -> Repeated<impl UnitParser<'src, I, E, Output = <I as Input<'src>>::Token> + Copy, I, E, <I as Input<'src>>::Token>
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -464,7 +464,7 @@ where
 /// ```
 ///
 #[must_use]
-pub fn int<'src, I, E>(radix: u32) -> impl Parser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
+pub fn int<'src, I, E>(radix: u32) -> impl UnitParser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
 where
     I: StrInput<'src>,
     I::Token: Char + 'src,
@@ -516,7 +516,7 @@ pub mod ascii {
     /// An identifier is defined as an ASCII alphabetic character or an underscore followed by any number of alphanumeric
     /// characters or underscores. The regex pattern for it is `[a-zA-Z_][a-zA-Z0-9_]*`.
     #[must_use]
-    pub fn ident<'src, I, E>() -> impl Parser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
+    pub fn ident<'src, I, E>() -> impl UnitParser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
     where
         I: StrInput<'src>,
         I::Token: Char + 'src,
@@ -580,7 +580,7 @@ pub mod ascii {
     #[track_caller]
     pub fn keyword<'src, I, S, E>(
         keyword: S,
-    ) -> impl Parser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Clone + 'src
+    ) -> impl UnitParser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Clone + 'src
     where
         I: StrInput<'src>,
         I::Slice: PartialEq,
@@ -939,7 +939,7 @@ pub mod unicode {
     ///
     /// An identifier is defined as per "Default Identifiers" in [Unicode Standard Annex #31](https://www.unicode.org/reports/tr31/).
     #[must_use]
-    pub fn ident<'src, I, E>() -> impl Parser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
+    pub fn ident<'src, I, E>() -> impl UnitParser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Copy
     where
         I: StrInput<'src>,
         I::Token: Char + 'src,
@@ -998,7 +998,7 @@ pub mod unicode {
     #[track_caller]
     pub fn keyword<'src, I, S, E>(
         keyword: S,
-    ) -> impl Parser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Clone + 'src
+    ) -> impl UnitParser<'src, I, E, Output = <I as SliceInput<'src>>::Slice> + Clone + 'src
     where
         I: StrInput<'src>,
         I::Slice: PartialEq,
@@ -1044,7 +1044,7 @@ mod tests {
     use crate::prelude::*;
     use std::fmt;
 
-    fn make_ascii_kw_parser<'src, I>(s: I::Slice) -> impl Parser<'src, I, Output = ()>
+    fn make_ascii_kw_parser<'src, I>(s: I::Slice) -> impl UnitParser<'src, I, Output = ()>
     where
         I: crate::StrInput<'src>,
         I::Slice: PartialEq + Clone,
@@ -1053,7 +1053,7 @@ mod tests {
         text::ascii::keyword(s).ignored()
     }
 
-    fn make_unicode_kw_parser<'src, I>(s: I::Slice) -> impl Parser<'src, I, Output = ()>
+    fn make_unicode_kw_parser<'src, I>(s: I::Slice) -> impl UnitParser<'src, I, Output = ()>
     where
         I: crate::StrInput<'src>,
         I::Slice: PartialEq + Clone,
@@ -1062,7 +1062,7 @@ mod tests {
         text::unicode::keyword(s).ignored()
     }
 
-    fn test_ok<'src, P: Parser<'src, &'src str, Output = &'src str>>(parser: P, input: &'src str) {
+    fn test_ok<'src, P: UnitParser<'src, &'src str, Output = &'src str>>(parser: P, input: &'src str) {
         assert_eq!(
             parser.parse(input),
             ParseResult {
@@ -1072,7 +1072,7 @@ mod tests {
         );
     }
 
-    fn test_err<'src, P: Parser<'src, &'src str, Output = &'src str>>(parser: P, input: &'src str) {
+    fn test_err<'src, P: UnitParser<'src, &'src str, Output = &'src str>>(parser: P, input: &'src str) {
         assert_eq!(
             parser.parse(input),
             ParseResult {

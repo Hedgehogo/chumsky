@@ -13,7 +13,7 @@ impl<T, E> Located<T, E> {
     }
 }
 
-/// The result of calling [`Parser::go`]
+/// The result of calling [`UnitParser::go`]
 pub(crate) type PResult<M, O> = Result<<M as Mode>::Output<O>, ()>;
 /// The result of calling [`IterParser::next`]
 pub(crate) type IPResult<M, O> = Result<Option<<M as Mode>::Output<O>>, ()>;
@@ -61,7 +61,7 @@ pub trait Mode {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, E, Output = O> + ?Sized;
+        P: UnitParser<'a, I, E, Output = O> + ?Sized;
 
     /// Invoke a parser with configuration using the current mode. This is normally equivalent
     /// to [`parser.go::<M>(inp)`](ConfigParser::go_cfg), but it can be called on unsized values
@@ -168,7 +168,7 @@ impl Mode for Emit {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, E, Output = O> + ?Sized,
+        P: UnitParser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_emit(inp)
     }
@@ -279,7 +279,7 @@ impl Mode for Check {
     where
         I: Input<'a>,
         E: ParserExtra<'a, I>,
-        P: Parser<'a, I, E, Output = O> + ?Sized,
+        P: UnitParser<'a, I, E, Output = O> + ?Sized,
     {
         parser.go_check(inp)
     }

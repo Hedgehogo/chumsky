@@ -66,7 +66,7 @@ impl<'src, 'b, I: Input<'src>, O, E: ParserExtra<'src, I>> Recursive<Indirect<'s
     /// Declaring a parser before defining it is required for a parser to reference itself.
     ///
     /// This should be followed by **exactly one** call to the [`Recursive::define`] method prior to using the parser
-    /// for parsing (i.e: via the [`Parser::parse`] method or similar).
+    /// for parsing (i.e: via the [`UnitParser::parse`] method or similar).
     ///
     /// Prefer to use [`recursive()`], which is a convenient wrapper around this method and [`Recursive::define`], if
     /// possible.
@@ -109,7 +109,7 @@ impl<'src, 'b, I: Input<'src>, O, E: ParserExtra<'src, I>> Recursive<Indirect<'s
     /// Defines the parser after declaring it, allowing it to be used for parsing.
     // INFO: Clone bound not actually needed, but good to be safe for future compat
     #[track_caller]
-    pub fn define<P: Parser<'src, I, E, Output = O> + Clone + 'src + 'b>(&mut self, parser: P) {
+    pub fn define<P: UnitParser<'src, I, E, Output = O> + Clone + 'src + 'b>(&mut self, parser: P) {
         let location = *Location::caller();
         self.parser()
             .inner
@@ -154,7 +154,7 @@ pub(crate) fn recurse<R, F: FnOnce() -> R>(f: F) -> R {
     f()
 }
 
-impl<'src, I, E, O> Parser<'src, I, E> for Recursive<Indirect<'src, '_, I, O, E>>
+impl<'src, I, E, O> UnitParser<'src, I, E> for Recursive<Indirect<'src, '_, I, O, E>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -178,7 +178,7 @@ where
     go_extra!(Self::Output);
 }
 
-impl<'src, I, E, O> Parser<'src, I, E> for Recursive<Direct<'src, '_, I, O, E>>
+impl<'src, I, E, O> UnitParser<'src, I, E> for Recursive<Direct<'src, '_, I, O, E>>
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
@@ -247,7 +247,7 @@ pub fn recursive<'src, 'b, I, O, E, A, F>(f: F) -> Recursive<Direct<'src, 'b, I,
 where
     I: Input<'src>,
     E: ParserExtra<'src, I>,
-    A: Parser<'src, I, E, Output = O> + Clone + 'b,
+    A: UnitParser<'src, I, E, Output = O> + Clone + 'b,
     F: FnOnce(Recursive<Direct<'src, 'b, I, O, E>>) -> A,
 {
     let rc = Rc::new_cyclic(|rc| {
