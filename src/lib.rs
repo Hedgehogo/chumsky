@@ -3902,6 +3902,17 @@ mod tests {
     }
 
     #[test]
+    fn separated_by() {
+        use crate::{error::Simple, extra};
+
+        let parser = just::<_, &str, extra::Err<Simple<_>>>("a")
+            .or_not()
+            .separated_by(just("b"));
+
+        assert_eq!(parser.parse("bba").into_result(), Ok(()));
+    }
+    
+    #[test]
     fn zst_error() {
         use crate::newline;
 
