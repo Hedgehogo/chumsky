@@ -1,9 +1,12 @@
 use super::*;
 
-/// An input that dynamically pulls tokens from an [`Iterator`].
+/// An input that dynamically pulls tokens from a cached [`Iterator`].
 ///
-/// Internally, the stream will pull tokens in batches so as to avoid invoking the iterator every time a new token is
-/// required.
+/// Internally, the stream will pull tokens in batches and cache the results on the heap so as to avoid invoking the
+/// iterator every time a new token is required.
+///
+/// Note: This input type should be used when the internal iterator type, `I`, is *expensive* to clone. This is usually
+/// not the case: you might find that [`IterInput`] performs better.
 pub struct Stream<I: Iterator> {
     tokens: Vec<I::Item>,
     iter: I,
@@ -18,7 +21,7 @@ impl<I: Iterator> Stream<I> {
     /// # use chumsky::{prelude::*, input::Stream};
     /// let stream = Stream::from_iter((0..10).map(|i| char::from_digit(i, 10).unwrap()));
     ///
-    /// let parser = text::digits::<_, extra::Err<Simple<_>>>(10).collect::<String>();
+    /// let parser = any::<_, extra::Err<Simple<_>>>().filter(|c: &char| c.is_ascii_digit()).repeated().collect::<String>();
     ///
     /// assert_eq!(parser.parse(stream).into_result().as_deref(), Ok("0123456789"));
     /// ```
@@ -60,7 +63,7 @@ pub type BoxedStream<'a, T> = Stream<Box<dyn Iterator<Item = T> + 'a>>;
 pub type BoxedExactSizeStream<'a, T> = Stream<Box<dyn ExactSizeIterator<Item = T> + 'a>>;
 
 impl<I: Iterator> Sealed for Stream<I> {}
-impl<'a, I: Iterator + 'a> Input<'a> for Stream<I>
+impl<'src, I: Iterator + 'src> Input<'src> for Stream<I>
 where
     I::Item: Clone,
 {
@@ -97,7 +100,7 @@ where
     }
 }
 
-impl<'a, I: ExactSizeIterator + 'a> ExactSizeInput<'a> for Stream<I>
+impl<'src, I: ExactSizeIterator + 'src> ExactSizeInput<'src> for Stream<I>
 where
     I::Item: Clone,
 {
@@ -107,7 +110,7 @@ where
     }
 }
 
-impl<'a, I: Iterator + 'a> ValueInput<'a> for Stream<I>
+impl<'src, I: Iterator + 'src> ValueInput<'src> for Stream<I>
 where
     I::Item: Clone,
 {
@@ -126,10 +129,11 @@ where
     }
 }
 
-/// An input type that uses an iterator to generate tokens.
+/// An input that dynamically pulls tokens from an [`Iterator`].
 ///
-/// This input type supports backtracking by duplicating the iterator. It is recommended that your iterator is very
-/// cheap to copy/clone.
+/// This input type supports rewinding by [`Clone`]-ing the iterator. It is recommended that your iterator is very
+/// cheap to clone. If this is not the case, consider using [`Stream`] instead, which caches generated tokens
+/// internally.
 pub struct IterInput<I, S> {
     iter: I,
     eoi: S,
@@ -177,15 +181,35 @@ where
     }
 
     unsafe fn span(eoi: &mut Self::Cache, range: Range<&Self::Cursor>) -> Self::Span {
-        let start = range
-            .start
-            .0
-            .clone()
-            .next()
-            .map(|(_, s)| s.start())
-            .unwrap_or_else(|| eoi.start());
-        let end = range.end.2.clone().unwrap_or_else(|| eoi.end());
-        S::new(eoi.context(), start..end)
+        match range.start.0.clone().next() {
+            Some((_, s)) => {
+                let end = range.end.2.clone().unwrap_or_else(|| eoi.end());
+                S::new(eoi.context(), s.start()..end)
+            }
+            None => S::new(eoi.context(), eoi.end()..eoi.end()),
+        }
+    }
+}
+
+// impl<'src, I, S> ExactSizeInput<'src> for IterInput<I, S>
+// where
+//     I: Iterator<Item = (T, S)> + Clone + 'src,
+//     S: Span + 'src,
+// {
+//     #[inline(always)]
+//     unsafe fn span_from(this: &mut Self::Cache, range: RangeFrom<&Self::Cursor>) -> Self::Span {
+//         (*range.start..this.tokens.len() + cursor.0.len()).into()
+//     }
+// }
+
+impl<'src, I, T: 'src, S> ValueInput<'src> for IterInput<I, S>
+where
+    I: Iterator<Item = (T, S)> + Clone + 'src,
+    S: Span + 'src,
+{
+    #[inline]
+    unsafe fn next(this: &mut Self::Cache, cursor: &mut Self::Cursor) -> Option<Self::Token> {
+        Self::next_maybe(this, cursor)
     }
 }
 

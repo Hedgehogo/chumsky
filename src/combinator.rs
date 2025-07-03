@@ -92,6 +92,8 @@ where
     where
         I: 'src;
 
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
+
     #[inline(always)]
     fn make_iter<M: Mode>(
         &self,
@@ -165,6 +167,8 @@ where
         = (A::IterState<M>, A::Config)
     where
         I: 'src;
+
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
 
     fn make_iter<M: Mode>(
         &self,
@@ -249,15 +253,40 @@ where
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
         let before = inp.cursor();
-        self.parser.go::<Emit>(inp).and_then(|out| {
-            if (self.filter)(&out) {
-                Ok(M::bind(|| out))
-            } else {
-                let err_span = inp.span_since(&before);
-                inp.add_alt(None, None, err_span);
+        // Remove the pre-inner alt, to be reinserted later so we always preserve it
+        let old_alt = inp.errors.alt.take();
+
+        let res = self.parser.go::<Emit>(inp);
+        let span = inp.span_since(&before);
+        let new_alt = inp.errors.alt.take();
+
+        match res {
+            Ok(out) => {
+                if (self.filter)(&out) {
+                    // If successful, reinsert the original alt and then apply the new alt on top of it, since both are valid
+                    inp.errors.alt = old_alt;
+                    if let Some(new_alt) = new_alt {
+                        inp.add_alt_err(&new_alt.pos, new_alt.err);
+                    }
+                    Ok(M::bind(|| out))
+                } else {
+                    // If unsuccessful, reinsert the original alt but replace the new alt with the "something else" error (since it overrides it)
+                    let expected = [DefaultExpected::SomethingElse];
+                    let err = E::Error::expected_found(expected, None, span);
+                    inp.errors.alt = old_alt;
+                    inp.add_alt_err(&before.inner, err);
+                    Err(())
+                }
+            }
+
+            Err(_) => {
+                inp.errors.alt = old_alt;
+                if let Some(new_alt) = new_alt {
+                    inp.add_alt_err(&new_alt.pos, new_alt.err);
+                }
                 Err(())
             }
-        })
+        }
     }
 
     go_extra!(O);
@@ -309,6 +338,8 @@ where
         = A::IterState<M>
     where
         I: 'src;
+
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
 
     #[inline(always)]
     fn make_iter<M: Mode>(
@@ -381,6 +412,8 @@ where
         = A::IterState<M>
     where
         I: 'src;
+
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
 
     #[inline(always)]
     fn make_iter<M: Mode>(
@@ -461,6 +494,8 @@ where
     where
         I: 'src;
 
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
+
     #[inline(always)]
     fn make_iter<M: Mode>(
         &self,
@@ -516,6 +551,78 @@ where
     go_extra!(I::Span);
 }
 
+/// See [`Parser::try_foldl`].
+pub struct TryFoldl<F, A, B, OB, E> {
+    pub(crate) parser_a: A,
+    pub(crate) parser_b: B,
+    pub(crate) folder: F,
+    #[cfg(debug_assertions)]
+    pub(crate) location: Location<'static>,
+    #[allow(dead_code)]
+    pub(crate) phantom: EmptyPhantom<(OB, E)>,
+}
+
+impl<F: Copy, A: Copy, B: Copy, OB, E> Copy for TryFoldl<F, A, B, OB, E> {}
+impl<F: Clone, A: Clone, B: Clone, OB, E> Clone for TryFoldl<F, A, B, OB, E> {
+    fn clone(&self) -> Self {
+        Self {
+            parser_a: self.parser_a.clone(),
+            parser_b: self.parser_b.clone(),
+            folder: self.folder.clone(),
+            #[cfg(debug_assertions)]
+            location: self.location,
+            phantom: EmptyPhantom::new(),
+        }
+    }
+}
+
+impl<'src, I, F, A, B, OA, OB, E> Parser<'src, I, OA, E> for TryFoldl<F, A, B, OB, E>
+where
+    I: Input<'src>,
+    A: Parser<'src, I, OA, E>,
+    B: IterParser<'src, I, OB, E>,
+    E: ParserExtra<'src, I>,
+    F: Fn(OA, OB, &mut MapExtra<'src, '_, I, E>) -> Result<OA, E::Error>,
+{
+    #[inline(always)]
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, OA>
+    where
+        Self: Sized,
+    {
+        let before_all = inp.cursor();
+        let mut out = self.parser_a.go::<Emit>(inp)?;
+        let mut iter_state = self.parser_b.make_iter::<Emit>(inp)?;
+        loop {
+            let before = inp.cursor();
+            match self.parser_b.next::<Emit>(inp, &mut iter_state) {
+                Ok(Some(b_out)) => {
+                    match (self.folder)(out, b_out, &mut MapExtra::new(&before_all, inp)) {
+                        Ok(b_f_out) => {
+                            out = b_f_out;
+                        }
+                        Err(err) => {
+                            inp.add_alt_err(&before.inner, err);
+                            break Err(());
+                        }
+                    }
+                }
+                Ok(None) => break Ok(M::bind(|| out)),
+                Err(()) => break Err(()),
+            }
+            #[cfg(debug_assertions)]
+            if !B::NONCONSUMPTION_IS_OK {
+                debug_assert!(
+                    before != inp.cursor(),
+                    "found Foldl combinator making no progress at {}",
+                    self.location,
+                );
+            }
+        }
+    }
+
+    go_extra!(OA);
+}
+
 /// See [`Parser::try_map`].
 pub struct TryMap<A, OA, F> {
     pub(crate) parser: A,
@@ -545,15 +652,25 @@ where
     #[inline(always)]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
         let before = inp.cursor();
+        // Remove the pre-inner alt, to be reinserted later so we always preserve it
+        let old_alt = inp.errors.alt.take();
+
         let out = self.parser.go::<Emit>(inp)?;
         let span = inp.span_since(&before);
-        let old_alt = inp.errors.alt.take();
+        let new_alt = inp.errors.alt.take();
+
         match (self.mapper)(out, span) {
             Ok(out) => {
+                // If successful, reinsert the original alt and then apply the new alt on top of it, since both are valid
                 inp.errors.alt = old_alt;
+                if let Some(new_alt) = new_alt {
+                    inp.add_alt_err(&before.inner, new_alt.err);
+                }
                 Ok(M::bind(|| out))
             }
             Err(err) => {
+                // If unsuccessful, reinsert the original alt but replace the new alt with the mapper error (since it overrides it)
+                inp.errors.alt = old_alt;
                 inp.add_alt_err(&before.inner, err);
                 Err(())
             }
@@ -655,6 +772,22 @@ impl<A: Clone, O> Clone for IntoIter<A, O> {
             phantom: EmptyPhantom::new(),
         }
     }
+}
+
+impl<'src, A, O, I, E> Parser<'src, I, (), E> for IntoIter<A, O>
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    A: Parser<'src, I, O, E>,
+    O: IntoIterator,
+{
+    #[inline(always)]
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, ()> {
+        self.parser.go::<Check>(inp)?;
+        Ok(M::bind(|| ()))
+    }
+
+    go_extra!(());
 }
 
 impl<'src, A, O, I, E> IterParser<'src, I, O::Item, E> for IntoIter<A, O>
@@ -814,7 +947,8 @@ where
                     inp.add_alt_err(&before.inner /*&err.pos*/, err.err);
                 } else {
                     let err_span = inp.span_since(&before);
-                    inp.add_alt(None, None, err_span);
+                    // TODO: Is this an appropriate way to handle infinite recursion?
+                    inp.add_alt([], None, err_span);
                 }
                 return Err(());
             }
@@ -872,6 +1006,47 @@ where
     }
 
     go_extra!((OA, OB));
+}
+
+impl<'src, I, E, A, B, O, U, V> IterParser<'src, I, O, E> for Then<A, B, U, V, E>
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    A: IterParser<'src, I, O, E>,
+    B: IterParser<'src, I, O, E>,
+{
+    type IterState<M: Mode>
+        = (A::IterState<M>, Option<B::IterState<M>>)
+    where
+        I: 'src;
+
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK && B::NONCONSUMPTION_IS_OK;
+
+    #[inline(always)]
+    fn make_iter<M: Mode>(
+        &self,
+        inp: &mut InputRef<'src, '_, I, E>,
+    ) -> PResult<Emit, Self::IterState<M>> {
+        Ok((self.parser_a.make_iter::<M>(inp)?, None))
+    }
+
+    #[inline(always)]
+    fn next<M: Mode>(
+        &self,
+        inp: &mut InputRef<'src, '_, I, E>,
+        state: &mut Self::IterState<M>,
+    ) -> IPResult<M, O> {
+        match state {
+            (_, Some(b)) => self.parser_b.next(inp, b),
+            (a, b) => match self.parser_a.next(inp, a)? {
+                Some(a_out) => Ok(Some(a_out)),
+                None => {
+                    let b = b.insert(self.parser_b.make_iter(inp)?);
+                    self.parser_b.next(inp, b)
+                }
+            },
+        }
+    }
 }
 
 /// See [`Parser::ignore_then`].
@@ -1056,6 +1231,8 @@ where
     where
         I: 'src;
 
+    const NONCONSUMPTION_IS_OK: bool = B::NONCONSUMPTION_IS_OK;
+
     #[inline(always)]
     fn make_iter<M: Mode>(
         &self,
@@ -1129,6 +1306,8 @@ where
         = (OA, B::IterState<M>)
     where
         I: 'src;
+
+    const NONCONSUMPTION_IS_OK: bool = B::NONCONSUMPTION_IS_OK;
 
     #[inline(always)]
     fn make_iter<M: Mode>(
@@ -1880,6 +2059,8 @@ where
     where
         I: 'src;
 
+    const NONCONSUMPTION_IS_OK: bool = A::NONCONSUMPTION_IS_OK;
+
     #[inline(always)]
     fn make_iter<M: Mode>(
         &self,
@@ -1992,7 +2173,7 @@ where
 {
     #[inline]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, C> {
-        let before = inp.cursor();
+        // let before = inp.cursor();
         let mut output = M::bind(|| C::uninit());
         let mut iter_state = self.parser.make_iter::<M>(inp)?;
         for idx in 0..C::LEN {
@@ -2001,8 +2182,9 @@ where
                     M::combine_mut(&mut output, out, |c, out| C::write(c, idx, out));
                 }
                 Ok(None) => {
-                    let span = inp.span_since(&before);
-                    inp.add_alt(None, None, span);
+                    // let span = inp.span_since(&before);
+                    // We don't add an alt here because we assume the inner parser will. Is this safe to assume?
+                    // inp.add_alt([ExpectedMoreElements(Some(C::LEN - idx))], None, span);
                     // SAFETY: We're guaranteed to have initialized up to `idx` values
                     M::map(output, |mut output| unsafe {
                         C::drop_before(&mut output, idx)
@@ -2059,6 +2241,8 @@ where
     A: Parser<'src, I, O, E>,
 {
     type IterState<M: Mode> = bool;
+
+    const NONCONSUMPTION_IS_OK: bool = true;
 
     #[inline(always)]
     fn make_iter<M: Mode>(
@@ -2131,7 +2315,11 @@ where
         match result {
             Ok(()) => {
                 let found = inp.next_inner();
-                inp.add_alt(None, found.map(|f| f.into()), result_span);
+                inp.add_alt(
+                    [DefaultExpected::SomethingElse],
+                    found.map(|f| f.into()),
+                    result_span,
+                );
                 Err(())
             }
             Err(()) => Ok(M::bind(|| ())),
@@ -2170,6 +2358,11 @@ where
     O: IntoIterator,
 {
     type IterState<M: Mode> = (A::IterState<M>, Option<M::Output<O::IntoIter>>);
+
+    // A::NONCONSUMPTION_IS_OK cannot be used because if we are iterating
+    // over O, we are not consuming any input (input has probably
+    // already been comsumed when constructing O)
+    const NONCONSUMPTION_IS_OK: bool = true;
 
     #[inline(always)]
     fn make_iter<M: Mode>(
@@ -2767,6 +2960,51 @@ where
 
 //     go_extra!(O);
 // }
+
+/// See [`Parser::contextual`].
+#[derive(Copy, Clone)]
+pub struct Contextual<A> {
+    pub(crate) inner: A,
+}
+
+impl<'src, I, O, E, A> Parser<'src, I, O, E> for Contextual<A>
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    A: Parser<'src, I, O, E>,
+{
+    #[inline]
+    fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
+        Self::go_cfg::<M>(self, inp, true)
+    }
+
+    go_extra!(O);
+}
+
+impl<'src, I, O, E, A> ConfigParser<'src, I, O, E> for Contextual<A>
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    A: Parser<'src, I, O, E>,
+{
+    type Config = bool;
+
+    #[inline]
+    fn go_cfg<M: Mode>(
+        &self,
+        inp: &mut InputRef<'src, '_, I, E>,
+        cfg: Self::Config,
+    ) -> PResult<M, O> {
+        let before = inp.cursor();
+        if cfg {
+            self.inner.go::<M>(inp)
+        } else {
+            let err_span = inp.span_since(&before);
+            inp.add_alt([DefaultExpected::SomethingElse], None, err_span);
+            Err(())
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -23,13 +23,13 @@ Chumsky can be added as a project dependency in one of two ways.
 1) By executing the following command in your cargo project:
 
 ```sh
-$ cargo add chumsky@1
+$ cargo add chumsky
 ```
 
 2) By adding the following to your `Cargo.toml` file:
 
 ```toml
-chumsky = "1"
+chumsky = "0.10"
 ```
 
 <details>
@@ -130,8 +130,8 @@ fn test_parser() {
 }
 ```
 
-Hopefully, this code is fairly self-explanatory. We call `parse()` (the function we wrote in the previous section) to
-create an instance of our parsers, and then we call [`Parser::parse`] on it with the desired input to actually do some
+Hopefully, this code is fairly self-explanatory. We call `parser()` (the function we wrote in the previous section) to
+create an instance of our parser, and then we call [`Parser::parse`] on it with the desired input to actually do some
 parsing. The return value is the result of the parse.
 
 From here, the world is your lobster: you can move on to the tutorial sections of this guide or you can jump write into

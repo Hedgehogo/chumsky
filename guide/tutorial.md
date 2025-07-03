@@ -1,8 +1,5 @@
 # Chumsky: A Tutorial
 
-*Please note that this tutorial is kept up to date with the `main` branch and not the most stable release: small
-details may differ!*
-
 In this tutorial, we'll develop a parser (and interpreter!) for a programming language called 'Foo'.
 
 Foo is a small language, but it's enough for us to have some fun. It isn't
@@ -10,7 +7,7 @@ Foo is a small language, but it's enough for us to have some fun. It isn't
 allow us to get to grips with parsing using Chumsky, containing many of the elements you'd find in a 'real' programming
 language. Here's some sample code written in Foo:
 
-```
+```text
 let seven = 7;
 fn add x y = x + y;
 add(2, 3) * -seven
@@ -48,14 +45,18 @@ Another consequence of creating parsers in a declarative style is that *defining
 
 ## Similarities between `Parser` and `Iterator`
 
-The most important API in Chumsky is the [`Parser`](https://docs.rs/chumsky/latest/chumsky/trait.Parser.html) trait, implemented by all parsers. Because parsers don't do anything by themselves, writing Chumsky parsers often feels very similar to writing iterators in Rust using the [`Iterator`](https://doc.rust-lang.org/std/iter/trait.Iterator.html) trait. If you've enjoyed writing iterators in Rust before, you'll hopefully find the same satisfaction writing parsers with Chumsky. They even [share](https://docs.rs/chumsky/latest/chumsky/trait.Parser.html#method.map) [several](https://docs.rs/chumsky/latest/chumsky/trait.Parser.html#method.flatten) [functions](https://docs.rs/chumsky/latest/chumsky/trait.Parser.html#method.collect) with each other!
+The most important API in Chumsky is the [`Parser`] trait, implemented by all parsers. Because parsers don't do
+anything by themselves, writing Chumsky parsers often feels very similar to writing iterators in Rust using the
+[`Iterator`] trait. If you've enjoyed writing iterators in Rust before, you'll hopefully find the same satisfaction
+writing parsers with Chumsky. They even [share](Parser::map) [several](IterParser::flatten)
+[functions](IterParser::method.collect) with each other!
 
 ## Setting up
 
 Create a new project with `cargo new --bin foo`, add the latest version of Chumsky as a dependency, and place
 the following in your `main.rs`:
 
-```rust
+```rust ignore
 use chumsky::prelude::*;
 
 fn main() {
@@ -76,31 +77,32 @@ printed to the console.
 Next, we'll create a data type that represents a program written in Foo. All programs in Foo are expressions,
 so we'll call it `Expr`.
 
-```rust
+```rust ignore
 #[derive(Debug)]
-enum Expr {
+enum Expr<'src> {
     Num(f64),
-    Var(String),
+    Var(&'src str),
 
-    Neg(Box<Expr>),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
+    Neg(Box<Expr<'src>>),
+    Add(Box<Expr<'src>>, Box<Expr<'src>>),
+    Sub(Box<Expr<'src>>, Box<Expr<'src>>),
+    Mul(Box<Expr<'src>>, Box<Expr<'src>>),
+    Div(Box<Expr<'src>>, Box<Expr<'src>>),
 
-    Call(String, Vec<Expr>),
+    Call(&'src str, Vec<Expr<'src>>),
     Let {
-        name: String,
-        rhs: Box<Expr>,
-        then: Box<Expr>,
+        name: &'src str,
+        rhs: Box<Expr<'src>>,
+        then: Box<Expr<'src>>,
     },
     Fn {
-        name: String,
-        args: Vec<String>,
-        body: Box<Expr>,
-        then: Box<Expr>,
-    },
+        name: &'src str,
+        args: Vec<&'src str>,
+        body: Box<Expr<'src>>,
+        then: Box<Expr<'src>>,
+    }
 }
+
 ```
 
 This is Foo's [Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree) (AST). It represents
@@ -109,35 +111,32 @@ infinitely large). Each expression may itself contain sub-expressions.
 
 As an example, the expression `let x = 5; x * 3` is encoded as follows using the `Expr` type:
 
-```rs
+```rust ignore
 Expr::Let {
     name: "x",
-    rhs: Expr::Num(5.0),
-    then: Expr::Mul(
-        Expr::Var("x"),
-        Expr::Num(3.0),
-    ),
+    rhs: Box::new(Expr::Num(5.0)),
+    then: Box::new(Expr::Mul(
+        Box::new(Expr::Var("x")),
+        Box::new(Expr::Num(3.0))
+    )),
 }
 ```
 
 The purpose of our parser will be to perform this conversion, from source code to AST.
 
-We're also going to create a function that creates Foo's parser. Our parser takes in a `char` stream and
+We're also going to create a function that creates Foo's parser. Our parser takes in a `&str` (a string slice) and
 produces an `Expr`, so we'll use those types for the `I` (input) and `O` (output) type parameters.
 
-```rust
-fn parser() -> impl Parser<char, Expr, Error = Simple<char>> {
+```rust ignore
+fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
     // To be filled in later...
 }
 ```
 
-The `Error` associated type allows us to customise the error type that Chumsky uses. For now, we'll stick to
-`Simple<I>`, a built-in error type that does everything we need.
-
 In `main`, we'll alter the `println!` as follows:
 
-```rust
-println!("{:?}", parser().parse(src));
+```rust ignore
+println!("{:?}", parser().parse(&src));
 ```
 
 ## Parsing digits
@@ -148,10 +147,13 @@ parsers. The very smallest parsers are called 'primitives' and live in the
 
 We're going to want to start by parsing the simplest element of Foo's syntax: numbers.
 
-```rust
+```rust ignore
 // In `parser`...
-filter(|c: &char| c.is_ascii_digit())
+any()
+    .filter(|c: &char| c.is_ascii_digit())
 ```
+
+The `any` primitive accepts any token(except the EOF) from `str`, then pass each token(a `char`) to next primitive `filter`.
 
 The `filter` primitive allows us to read a single input and accept it if it passes a condition. In our case,
 that condition simply checks that the character is a digit.
@@ -159,14 +161,15 @@ that condition simply checks that the character is a digit.
 If we compile this code now, we'll encounter an error. Why?
 
 Although we promised that our parser would produce an `Expr`, the `filter` primitive only outputs the input
-it found. Right now, all we have is a parser from `char` to `char` instead of a parser from `char` to `Expr`!
+it found. Right now, all we have is a parser from `str` to `char` instead of a parser from `str` to `Expr`!
 
 To solve this, we need to crack open the 'combinator' part of parser combinators. We'll use Chumsky's `map`
 method to convert the output of the parser to an `Expr`. This method is very similar to its namesake on
 `Iterator`.
 
-```rust
-filter(|c: &char| c.is_ascii_digit())
+```rust ignore
+any()
+    .filter(|c: &char| c.is_ascii_digit())
     .map(|c| Expr::Num(c.to_digit(10).unwrap() as f64))
 ```
 
@@ -176,38 +179,20 @@ that successfully parsed!) and then wrapping it in `Expr::Num(_)` to convert it 
 Try running the code. You'll see that you can type a digit into `test.foo` and have our interpreter generate
 an AST like so:
 
-```
-Ok(Num(5.0))
+```rust ignore
+ParseResult { output: Some(Num(5.0)), errs: [] }
 ```
 
 ## Parsing numbers
 
 If you're more than a little adventurous, you'll quickly notice that typing in a multi-digit number doesn't
-quite behave as expected. Inputting `42` will only produce a `Num(4.0)` AST.
+quite behave as expected. Inputting `42` produces a `None` output:
 
-This is because `filter` only accepts a *single* input. But now another question arises: why did our interpreter
-*not* complain at the trailing digits that didn't get parsed?
-
-The answer is that Chumsky's parsers are *lazy*: they will consume all of the input that they can and then stop.
-If there's any trailing input, it'll be ignored.
-
-This is obviously not always desirable. If the user places random nonsense at the end of the file, we want to be
-able to generate an error about it! Worse still, that 'nonsense' could be input the user intended to be part of
-the program, but that contained a syntax error and so was not properly parsed. How can we force the parser to consume
-all of the input?
-
-To do this, we can make use of two new parsers: the `then_ignore` combinator and the `end` primitive.
-
-```rust
-filter(|c: &char| c.is_ascii_digit())
-    .map(|c| Expr::Num(c.to_digit(10).unwrap() as f64))
-    .then_ignore(end())
+```rust ignore
+ParseResult { output: None, errs: [EmptyErr(())] }
 ```
 
-The `then_ignore` combinator parses a second pattern after the first, but ignores its output in favour of that of the
-first.
-
-The `end` primitive succeeds if it encounters only the end of input.
+This is because by default Chumsky's parsers are NOT lazy, that means a parser will produce an error if all input is not consumed, this is what we expected for most parsers.
 
 Combining these together, we now get an error for longer inputs. Unfortunately, this just reveals another problem
 (particularly if you're working on a Unix-like platform): any whitespace before or after our digit will upset our
@@ -216,44 +201,41 @@ parser and trigger an error.
 We can handle whitespace by adding a call to `padded_by` (which ignores a given pattern before and after the first)
 after our digit parser, and a repeating filter for any whitespace characters.
 
-```rust
-filter(|c: &char| c.is_ascii_digit())
+```rust ignore
+any()
+    .filter(|c: &char| c.is_ascii_digit())
     .map(|c| Expr::Num(c.to_digit(10).unwrap() as f64))
-    .padded_by(filter(|c: &char| c.is_whitespace()).repeated())
-    .then_ignore(end())
+    .padded_by(any().filter(|c: &char| c.is_whitespace()).repeated())
 ```
 
 This example should have taught you a few important things about Chumsky's parsers:
 
-1. Parsers are lazy: trailing input is ignored
-
-2. Whitespace is not automatically ignored. Chumsky is a general-purpose parsing library, and some languages care very
-   much about the structure of whitespace, so Chumsky does too
+1. Parsers are NOT lazy: all input must be consumed
+2. Whitespace is not automatically ignored. Chumsky is a general-purpose parsing library, and some languages care very much about the structure of whitespace, so Chumsky does too
 
 ## Cleaning up and taking shortcuts
 
-At this point, things are starting to look a little messy. We've ended up writing 4 lines of code to properly parse a
-single digit. Let's clean things up a bit. We'll also make use of a bunch of text-based parser primitives that
-come with Chumsky to get rid of some of this cruft.
+At this point, things are starting to look a little messy. We've ended up writing 4 lines of code to properly parse a single digit. Let's clean things up a bit. We'll also make use of a bunch of text-based parser primitives that come with Chumsky to get rid of some of this cruft.
 
-```rust
-let int = text::int(10)
-    .map(|s: String| Expr::Num(s.parse().unwrap()))
-    .padded();
-
-int.then_ignore(end())
+```rust ignore
+text::int(10)
+    .map(|s: &str| Expr::Num(s.parse().unwrap()))
+    .padded()
 ```
 
-That's better. We've also swapped out our custom digit parser with a built-in parser that parses any non-negative
-integer.
+`text::int(10)` accepts any number of decimal integers (`10` is the base); `map` is still used but now our parser can
+parse multi-digit integers, so the output type it's mapping is `&str`, not `char`; `padded` is a shortcut for ignoring
+any leading or trailing whitespace, just like our more manual code did.
+
+That's better. We've also swapped out our custom digit parser with a built-in parser that parses any non-negative integer.
 
 ## Evaluating simple expressions
 
 We'll now take a diversion away from the parser to create a function that can evaluate our AST. This is the 'heart' of
 our interpreter and is the thing that actually performs the computation of programs.
 
-```rust
-fn eval(expr: &Expr) -> Result<f64, String> {
+```rust ignore
+fn eval<'src>(expr: &'src Expr<'src>) -> Result<f64, String> {
     match expr {
         Expr::Num(x) => Ok(*x),
         Expr::Neg(a) => Ok(-eval(a)?),
@@ -267,16 +249,16 @@ fn eval(expr: &Expr) -> Result<f64, String> {
 ```
 
 This function might look scary at first glance, but there's not too much going on here: it just recursively calls
-itself, evaluating each node of the AST, combining the results via operators, until it has a final result. Any runtime
-errors simply get thrown back down the stack using `?`.
+itself, evaluating each node of the AST, combining the evaluated output via operators, until it has a final result. Any
+runtime errors simply get thrown back down the stack using `?`.
 
 We'll also change our `main` function a little so that we can pass our AST to `eval`.
 
-```rust
+```rust ignore
 fn main() {
     let src = std::fs::read_to_string(std::env::args().nth(1).unwrap()).unwrap();
 
-    match parser().parse(src) {
+    match parser().parse(&src).into_result() {
         Ok(ast) => match eval(&ast) {
             Ok(output) => println!("{}", output),
             Err(eval_err) => println!("Evaluation error: {}", eval_err),
@@ -288,8 +270,8 @@ fn main() {
 }
 ```
 
-This looks like a big change, but it's mostly just an extension of the previous code to pass the AST on to `eval` if
-parsing is successful. If unsuccessful, we just print the errors generated by the parser. Right now, none of our
+This also looks like a big change, but it's mostly just an extension of the previous code to pass the AST on to `eval`
+if parsing is successful. If unsuccessful, we just print the errors generated by the parser. Right now, none of our
 operators can produce errors when evaluated, but this will change in the future so we make sure to handle them in
 preparation.
 
@@ -298,15 +280,15 @@ preparation.
 Jumping back to our parser, let's handle unary operators. Currently, our only unary operator is `-`, the negation
 operator. We're looking to parse any number of `-`, followed by a number. More formally:
 
-```
+```text
 expr = op* + int
 ```
 
-We'll also give our `int` parser a new name, 'atom', for reasons that will become clear later.
+We'll also give our `int` parser a new name, `atom`, for reasons that will become clear later.
 
-```rust
+```rust ignore
 let int = text::int(10)
-    .map(|s: String| Expr::Num(s.parse().unwrap()))
+    .map(|s: &str| Expr::Num(s.parse().unwrap()))
     .padded();
 
 let atom = int;
@@ -315,31 +297,34 @@ let op = |c| just(c).padded();
 
 let unary = op('-')
     .repeated()
-    .then(atom)
-    .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
+    .foldr(atom, |_op, rhs| Expr::Neg(Box::new(rhs)));
 
-unary.then_ignore(end())
+unary
 ```
 
 Here, we meet a few new combinators:
 
-- `repeated` will parse a given pattern any number of times (including zero!), collecting the outputs into a `Vec`
+- `just` defines a parser that accepts only the given input. We leverage it to define `op` that can easily construct
+an operator parser later by passing the operator character.
 
-- `then` will parse one pattern and then another immediately afterwards, collecting both outputs into a tuple pair
+- `repeated` will parse a given pattern any number of times (including zero!). It also implements [`IterParser`], a
+parser that generates many sequential outputs.
 
-- `foldr` will take an output of the form `(Vec<T>, U)` and will fold it into a single `U` by repeatedly applying
-  the given function to each element of the `Vec<T>`
+- `foldr` means "fold-right". It is a method on [`IterParser`] that takes each element of the iterating parser, and the
+output of a final terminating parser, then 'folds' them all into a single value by repeatedly applying the given
+closure. The first argument `atom` is the terminating parser.
 
-This last combinator is worth a little more consideration. We're trying to parse *any number* of negation operators,
-followed by a single atom (for now, just a number). For example, the input `---42` would generate the following input to `foldr`:
+This is worth a little more consideration. We're trying to parse *any number* of negation operators, followed by a
+single atom (for now, just a number). For example, the input `---42` would generate the following outputs to be
+processed by `foldr`:
 
-```rust
-(['-', '-', '-'], Num(42.0))
+```rust ignore
+['-', '-', '-'], Num(42.0)
 ```
 
-The `foldr` function repeatedly applies the function to 'fold' the elements into a single element, like so:
+The `foldr` combinator repeatedly applies the folding function to 'fold' the elements into a single element, like so:
 
-```rust
+```text
 (['-',   '-',   '-'],   Num(42.0))
   ---    ---    ---     ---------
    |      |      |           |
@@ -353,8 +338,10 @@ The `foldr` function repeatedly applies the function to 'fold' the elements into
 Neg(Neg(Neg(Num(42.0))))
 ```
 
-This may be a little hard to conceptualise for those used to imperative programming, but for functional programmers
-it should come naturally: `foldr` is just equivalent to `reduce`!
+This may be a little hard to conceptualise for those used to imperative programming, but for functional programmers it
+should come naturally: [`fold`](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) is a function that appears
+in many functional languages, and even [in Rust's iterator
+API](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold)!
 
 Give the interpreter a try. You'll be able to enter inputs as before, but also values like `-17`. You can even apply
 the negation operator multiple times: `--9` will yield a value of `9` in the command line.
@@ -375,18 +362,18 @@ It's worth noting that summation operators (`+` and `-`) are typically considere
 one-another. The same also applies to product operators (`*` and `/`). For this reason, we treat each group as a single
 pattern.
 
-At each stage, we're looking for a simple pattern: a unary expression, following by any number of a combination of an
-operator and a unary expression. More formally:
+At each stage, we're looking for a simple pattern: an unary expression, following by any number of a combination of an
+operator and an unary expression. More formally:
 
-```
+```text
 expr = unary + (op + unary)*
 ```
 
 Let's expand our parser.
 
-```rust
+```rust ignore
 let int = text::int(10)
-    .map(|s: String| Expr::Num(s.parse().unwrap()))
+    .map(|s: &str| Expr::Num(s.parse().unwrap()))
     .padded();
 
 let atom = int;
@@ -395,24 +382,29 @@ let op = |c| just(c).padded();
 
 let unary = op('-')
     .repeated()
-    .then(atom)
-    .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
+    .foldr(atom, |_op, rhs| Expr::Neg(Box::new(rhs)));
 
-let product = unary.clone()
-    .then(op('*').to(Expr::Mul as fn(_, _) -> _)
-        .or(op('/').to(Expr::Div as fn(_, _) -> _))
-        .then(unary)
-        .repeated())
-    .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+let product = unary.foldl(
+    choice((
+        op('*').to(Expr::Mul as fn(_, _) -> _),
+        op('/').to(Expr::Div as fn(_, _) -> _),
+    ))
+    .then(unary)
+    .repeated(),
+    |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+);
 
-let sum = product.clone()
-    .then(op('+').to(Expr::Add as fn(_, _) -> _)
-        .or(op('-').to(Expr::Sub as fn(_, _) -> _))
-        .then(product)
-        .repeated())
-    .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+let sum = product.foldl(
+    choice((
+        op('+').to(Expr::Add as fn(_, _) -> _),
+        op('-').to(Expr::Sub as fn(_, _) -> _),
+    ))
+    .then(product)
+    .repeated(),
+    |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+);
 
-sum.then_ignore(end())
+sum
 ```
 
 The `Expr::Mul as fn(_, _) -> _` syntax might look a little unfamiliar, but don't worry! In Rust,
@@ -423,36 +415,36 @@ in `op` within the `foldl` call.
 
 Another three combinators are introduced here:
 
-- `or` attempts to parse a pattern and, if unsuccessful, instead attempts another pattern
+- `choice` attempts each parser in a tuple, producing the output of the first to successfully parse
 
 - `to` is similar to `map`, but instead of mapping the output, entirely overrides the output with a new value. In our
   case, we use it to convert each binary operator to a function that produces the relevant AST node for that operator.
 
-- `foldl` is very similar to `foldr` in the last section but, instead of operating on a `(Vec<_>, _)`, it operates
-  upon a `(_, Vec<_>)`, going backwards to combine values together with the function
+- `foldl` is very similar to `foldr` in the last section but, instead of parsing many leading patterns and then a
+  single terminating pattern, it parses a single starting pattern and then main trailing patterns.
 
 In a similar manner to `foldr` in the previous section on unary expressions, `foldl` is used to fold chains of binary
 operators into a single expression tree. For example, the input `2 + 3 - 7 + 5` would generate the following input to
 `foldl`:
 
-```rust
-(Num(2.0), [(Expr::Add, Num(3.0)), (Expr::Sub, Num(7.0)), (Add, Num(5.0))])
+```rust ignore
+Num(2.0), [(Expr::Add, Num(3.0)), (Expr::Sub, Num(7.0)), (Add, Num(5.0))]
 ```
 
 This then gets folded together by `foldl` like so:
 
-```rust
-(Num(2.0),   [(Add, Num(3.0)),   (Sub, Num(7.0)),   (Add, Num(5.0))])
- --------     ---------------     --------------    ---------------
-    |                |                 |                  |
-     \              /                  |                  |
- Add(Num(2.0), Num(3.0))               |                  |
-            |                          |                  |
-             \                        /                   |
-      Sub(Add(Num(2.0), Num(3.0)), Num(7.0))              |
-                       |                                  |
-                        \                                /
-               Add(Sub(Add(Num(2.0), Num(3.0)), Num(7.0)), Num(5.0))
+```text
+Num(2.0),   [(Add, Num(3.0)),   (Sub, Num(7.0)),   (Add, Num(5.0))])
+--------     ---------------     --------------    ---------------
+   |                |                 |                  |
+    \              /                  |                  |
+Add(Num(2.0), Num(3.0))               |                  |
+           |                          |                  |
+            \                        /                   |
+     Sub(Add(Num(2.0), Num(3.0)), Num(7.0))              |
+                      |                                  |
+                       \                                /
+              Add(Sub(Add(Num(2.0), Num(3.0)), Num(7.0)), Num(5.0))
 ```
 
 Give the interpreter a try. You should find that it can correctly handle both unary and binary operations combined in
@@ -464,56 +456,58 @@ A new challenger approaches: *nested expressions*. Sometimes, we want to overrid
 entirely. We can do this by nesting expressions within parentheses, like `(3 + 4) * 2`. How do we handle this?
 
 The creation of the `atom` pattern a few sections before was no accident: parentheses have a greater precedence than
-any operator, so we should treat a parenthesised expression as if it were equivalent to a single value. We call things
+any operator, so we should treat a parenthesized expression as if it were equivalent to a single value. We call things
 that behave like single values 'atoms' by convention.
 
-We're going to hoist our entire parser up into a closure, allowing us to define it in terms of itself.
+We're going to hoist our entire parser up into a [`recursive()`] parser, allowing us to define it in terms of itself.
 
-```rust
+```rust ignore
 recursive(|expr| {
-    let int = text::int(10)
-        .map(|s: String| Expr::Num(s.parse().unwrap()))
-        .padded();
+    let int = text::int(10).map(|s: &str| Expr::Num(s.parse().unwrap()));
 
-    let atom = int
-        .or(expr.delimited_by(just('('), just(')'))).padded();
+    let atom = int.or(expr.delimited_by(just('('), just(')'))).padded();
 
     let op = |c| just(c).padded();
 
     let unary = op('-')
         .repeated()
-        .then(atom)
-        .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
+        .foldr(atom, |_op, rhs| Expr::Neg(Box::new(rhs)));
 
-    let product = unary.clone()
-        .then(op('*').to(Expr::Mul as fn(_, _) -> _)
-            .or(op('/').to(Expr::Div as fn(_, _) -> _))
-            .then(unary)
-            .repeated())
-        .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+    let product = unary.clone().foldl(
+        choice((
+            op('*').to(Expr::Mul as fn(_, _) -> _),
+            op('/').to(Expr::Div as fn(_, _) -> _),
+        ))
+        .then(unary)
+        .repeated(),
+        |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+    );
 
-    let sum = product.clone()
-        .then(op('+').to(Expr::Add as fn(_, _) -> _)
-            .or(op('-').to(Expr::Sub as fn(_, _) -> _))
-            .then(product)
-            .repeated())
-        .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+    let sum = product.clone().foldl(
+        choice((
+            op('+').to(Expr::Add as fn(_, _) -> _),
+            op('-').to(Expr::Sub as fn(_, _) -> _),
+        ))
+        .then(product)
+        .repeated(),
+        |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+    );
 
     sum
 })
-    .then_ignore(end())
 ```
 
 There are a few things worth paying attention to here.
 
-1. `recursive` allows us to define a parser recursively in terms of itself by giving us a copy of it within the
+1. `or` attempts to parse a pattern and, if unsuccessful, instead attempts another pattern
+
+2. `recursive` allows us to define a parser recursively in terms of itself by giving us a copy of it within the
    closure's scope
 
-2. We use the recursive definition of `expr` within the definition of `atom`. We use the new `delimited_by` combinator
+3. We use the recursive definition of `expr` within the definition of `atom`. We use the new `delimited_by` combinator
    to allow it to sit nested within a pair of parentheses
 
-3. The `then_ignore(end())` call has *not* been hoisted inside the `recursive` call. This is because we only want to
-   parse an end of input on the outermost expression, not at every level of nesting
+4. We have to clone `unary` and `product` to use them in the closure of `recursive`
 
 Try running the interpreter. You'll find that it can handle a surprising number of cases elegantly. Make sure that the
 following cases work correctly:
@@ -530,7 +524,7 @@ following cases work correctly:
 Our next step is to handle `let`. Unlike Rust and other imperative languages, `let` in Foo is an expression and not an
 statement (Foo has no statements) that takes the following form:
 
-```
+```ignore
 let <ident> = <expr>; <expr>
 ```
 
@@ -538,45 +532,48 @@ We only want `let`s to appear at the outermost level of the expression, so we le
 expression definition. However, we also want to be able to chain `let`s together, so we put them in their own recursive
 definition. We call it `decl` ('declaration') because we're eventually going to be adding `fn` syntax too.
 
-```rust
-let ident = text::ident()
-    .padded();
+```rust ignore
+let ident = text::ascii::ident().padded();
 
 let expr = recursive(|expr| {
-    let int = text::int(10)
-        .map(|s: String| Expr::Num(s.parse().unwrap()))
-        .padded();
+    let int = text::int(10).map(|s: &str| Expr::Num(s.parse().unwrap()));
 
     let atom = int
         .or(expr.delimited_by(just('('), just(')')))
-        .or(ident.map(Expr::Var));
+        .or(ident.map(Expr::Var))
+        .padded();
 
     let op = |c| just(c).padded();
 
     let unary = op('-')
         .repeated()
-        .then(atom)
-        .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
+        .foldr(atom, |_op, rhs| Expr::Neg(Box::new(rhs)));
 
-    let product = unary.clone()
-        .then(op('*').to(Expr::Mul as fn(_, _) -> _)
-            .or(op('/').to(Expr::Div as fn(_, _) -> _))
-            .then(unary)
-            .repeated())
-        .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+    let product = unary.clone().foldl(
+        choice((
+            op('*').to(Expr::Mul as fn(_, _) -> _),
+            op('/').to(Expr::Div as fn(_, _) -> _),
+        ))
+        .then(unary)
+        .repeated(),
+        |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+    );
 
-    let sum = product.clone()
-        .then(op('+').to(Expr::Add as fn(_, _) -> _)
-            .or(op('-').to(Expr::Sub as fn(_, _) -> _))
-            .then(product)
-            .repeated())
-        .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
+    let sum = product.clone().foldl(
+        choice((
+            op('+').to(Expr::Add as fn(_, _) -> _),
+            op('-').to(Expr::Sub as fn(_, _) -> _),
+        ))
+        .then(product)
+        .repeated(),
+        |lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)),
+    );
 
     sum
 });
 
 let decl = recursive(|decl| {
-    let r#let = text::keyword("let")
+    let r#let = text::ascii::keyword("let")
         .ignore_then(ident)
         .then_ignore(just('='))
         .then(expr.clone())
@@ -595,24 +592,26 @@ let decl = recursive(|decl| {
 });
 
 decl
-    .then_ignore(end())
 ```
 
 `keyword` is simply a parser that looks for an exact identifier (i.e: it doesn't match identifiers that only start with
 a keyword).
 
 Other than that, there's nothing in the definition of `r#let` that you haven't seen before: familiar combinators, but
-combined in different ways. It selectively ignores parts of the syntax that we don't care about after validating that
-it exists, then uses those elements that it does care about to create an `Expr::Let` AST node.
+combined in different ways. `ignore_then` and `then_ignore` are used to ignore parts of the surface syntax (like
+keywords) that we don't care about representing in the AST.
 
 Another thing to note is that the definition of `ident` will parse `"let"`. To avoid the parser accidentally deciding
-that `"let"` is a variable, we place `r#let` earlier in the or chain than `expr` so that it prioritises the correct
+that `"let"` is a variable, we place `r#let` earlier in the or chain than `expr` so that it priorities the correct
 interpretation. As mentioned in previous sections, Chumsky handles ambiguity simply by choosing the first successful
-parse it encounters, so making sure that we declare things in the right order can sometimes be important.
+parse it encounters, so making sure that we declare things in the right order can sometimes be important. A
+fully-fledged 'production-worthy' parser might want to separate lexing and parsing into distinct steps to avoid
+accidental ambiguity such as this, but for now we'll keep going with our 'larser' design (i.e: lexing and parsing as a
+single step).
 
-You should now be able to run the interpreter and have it accept an input such as
+You should now be able to run the interpreter and have it accept inputs such as:
 
-```
+```ignore
 let five = 5;
 five * 3
 ```
@@ -620,8 +619,8 @@ five * 3
 Unfortunately, the `eval` function will panic because we've not yet handled `Expr::Var` or `Expr::Let`. Let's do that
 now.
 
-```rust
-fn eval<'a>(expr: &'a Expr, vars: &mut Vec<(&'a String, f64)>) -> Result<f64, String> {
+```rust ignore
+fn eval<'src>(expr: &'src Expr<'src>, vars: &mut Vec<(&'src str, f64)>) -> Result<f64, String> {
     match expr {
         Expr::Num(x) => Ok(*x),
         Expr::Neg(a) => Ok(-eval(a, vars)?),
@@ -629,18 +628,20 @@ fn eval<'a>(expr: &'a Expr, vars: &mut Vec<(&'a String, f64)>) -> Result<f64, St
         Expr::Sub(a, b) => Ok(eval(a, vars)? - eval(b, vars)?),
         Expr::Mul(a, b) => Ok(eval(a, vars)? * eval(b, vars)?),
         Expr::Div(a, b) => Ok(eval(a, vars)? / eval(b, vars)?),
-        Expr::Var(name) => if let Some((_, val)) = vars.iter().rev().find(|(var, _)| *var == name) {
-            Ok(*val)
-        } else {
-            Err(format!("Cannot find variable `{}` in scope", name))
-        },
+        Expr::Var(name) => {
+            if let Some((_, val)) = vars.iter().rev().find(|(var, _)| var == name) {
+                Ok(*val)
+            } else {
+                Err(format!("Cannot find variable `{}` in scope", name))
+            }
+        }
         Expr::Let { name, rhs, then } => {
             let rhs = eval(rhs, vars)?;
             vars.push((name, rhs));
             let output = eval(then, vars);
             vars.pop();
             output
-        },
+        }
         _ => todo!(),
     }
 }
@@ -658,19 +659,19 @@ Woo! That got a bit more complicated. Don't fear, there are only 3 important cha
 
 3. When we encounter an `Expr::Var` (i.e: an inline variable) we search the stack *backwards* (because Foo permits
    [variable shadowing](https://en.wikipedia.org/wiki/Variable_shadowing) and we only want to find the most recently
-   declared variable with the same name) to find the variables's value. If we can't find a variable of that name, we
+   declared variable with the same name) to find the variable's value. If we can't find a variable of that name, we
    generate a runtime error which gets propagated back up the stack.
 
 Obviously, the signature of `eval` has changed so we'll update the call in `main` to become:
 
-```rust
+```rust ignore
 eval(&ast, &mut Vec::new())
 ```
 
 Make sure to test the interpreter. Try experimenting with `let` declarations to make sure things aren't broken. In
 particular, it's worth testing variable shadowing by ensuring that the following program produces `8`:
 
-```
+```ignore
 let x = 5;
 let x = 3 + x;
 x
@@ -683,9 +684,9 @@ We're almost at a complete implementation of Foo. There's just one thing left: *
 Surprisingly, parsing functions is the easy part. All we need to modify is the definition of `decl` to add `r#fn`. It
 looks very much like the existing definition of `r#let`:
 
-```rust
+```rust ignore
 let decl = recursive(|decl| {
-    let r#let = text::keyword("let")
+    let r#let = text::ascii::keyword("let")
         .ignore_then(ident)
         .then_ignore(just('='))
         .then(expr.clone())
@@ -697,9 +698,9 @@ let decl = recursive(|decl| {
             then: Box::new(then),
         });
 
-    let r#fn = text::keyword("fn")
+    let r#fn = text::ascii::keyword("fn")
         .ignore_then(ident)
-        .then(ident.repeated())
+        .then(ident.repeated().collect::<Vec<_>>())
         .then_ignore(just('='))
         .then(expr.clone())
         .then_ignore(just(';'))
@@ -711,29 +712,31 @@ let decl = recursive(|decl| {
             then: Box::new(then),
         });
 
-    r#let
-        .or(r#fn)
-        .or(expr)
-        .padded()
+    r#let.or(r#fn).or(expr).padded()
 });
 ```
 
-There's nothing new here, you understand this all already.
+The only thing to note here is the use of `repeated()`, which gives us an [`IterParser`]. To collect this iterable
+parser's elements into a vector, we use [`IterParser::collect`].
 
 Obviously, we also need to add support for *calling* functions by modifying `atom`:
 
-```rust
-let call = ident
-    .then(expr.clone()
-        .separated_by(just(','))
-        .allow_trailing() // Foo is Rust-like, so allow trailing commas to appear in arg lists
-        .delimited_by(just('('), just(')')))
+```rust ignore
+ let call = ident
+    .then(
+        expr.clone()
+            .separated_by(just(','))
+            .allow_trailing()   // Foo is Rust-like, so allow trailing commas to appear in arg lists
+            .collect::<Vec<_>>()
+            .delimited_by(just('('), just(')')),
+    )
     .map(|(f, args)| Expr::Call(f, args));
 
 let atom = int
     .or(expr.delimited_by(just('('), just(')')))
     .or(call)
-    .or(ident.map(Expr::Var));
+    .or(ident.map(Expr::Var))
+    .padded();
 ```
 
 The only new combinator here is `separated_by` which behaves like `repeated`, but requires a separator pattern between
@@ -742,11 +745,11 @@ elements.
 
 Next, we modify our `eval` function to support a function stack.
 
-```rust
-fn eval<'a>(
-    expr: &'a Expr,
-    vars: &mut Vec<(&'a String, f64)>,
-    funcs: &mut Vec<(&'a String, &'a [String], &'a Expr)>,
+```rust ignore
+fn eval<'src>(
+    expr: &'src Expr<'src>,
+    vars: &mut Vec<(&'src str, f64)>,
+    funcs: &mut Vec<(&'src str, &'src [&'src str], &'src Expr<'src>)>,
 ) -> Result<f64, String> {
     match expr {
         Expr::Num(x) => Ok(*x),
@@ -755,52 +758,59 @@ fn eval<'a>(
         Expr::Sub(a, b) => Ok(eval(a, vars, funcs)? - eval(b, vars, funcs)?),
         Expr::Mul(a, b) => Ok(eval(a, vars, funcs)? * eval(b, vars, funcs)?),
         Expr::Div(a, b) => Ok(eval(a, vars, funcs)? / eval(b, vars, funcs)?),
-        Expr::Var(name) => if let Some((_, val)) = vars.iter().rev().find(|(var, _)| *var == name) {
-            Ok(*val)
-        } else {
-            Err(format!("Cannot find variable `{}` in scope", name))
-        },
+        Expr::Var(name) => {
+            if let Some((_, val)) = vars.iter().rev().find(|(var, _)| var == name) {
+                Ok(*val)
+            } else {
+                Err(format!("Cannot find variable `{}` in scope", name))
+            }
+        }
         Expr::Let { name, rhs, then } => {
             let rhs = eval(rhs, vars, funcs)?;
-            vars.push((name, rhs));
+            vars.push((*name, rhs));
             let output = eval(then, vars, funcs);
             vars.pop();
             output
-        },
-        Expr::Call(name, args) => if let Some((_, arg_names, body)) = funcs
-            .iter()
-            .rev()
-            .find(|(var, _, _)| *var == name)
-            .copied()
-        {
-            if arg_names.len() == args.len() {
-                let mut args = args
-                    .iter()
-                    .map(|arg| eval(arg, vars, funcs))
-                    .zip(arg_names.iter())
-                    .map(|(val, name)| Ok((name, val?)))
-                    .collect::<Result<_, String>>()?;
-                vars.append(&mut args);
-                let output = eval(body, vars, funcs);
-                vars.truncate(vars.len() - args.len());
-                output
+        }
+        Expr::Call(name, args) => {
+            if let Some((_, arg_names, body)) =
+                funcs.iter().rev().find(|(var, _, _)| var == name).copied()
+            {
+                if arg_names.len() == args.len() {
+                    let mut args = args
+                        .iter()
+                        .map(|arg| eval(arg, vars, funcs))
+                        .zip(arg_names.iter())
+                        .map(|(val, name)| Ok((*name, val?)))
+                        .collect::<Result<_, String>>()?;
+                    let old_vars = vars.len();
+                    vars.append(&mut args);
+                    let output = eval(body, vars, funcs);
+                    vars.truncate(old_vars);
+                    output
+                } else {
+                    Err(format!(
+                        "Wrong number of arguments for function `{}`: expected {}, found {}",
+                        name,
+                        arg_names.len(),
+                        args.len(),
+                    ))
+                }
             } else {
-                Err(format!(
-                    "Wrong number of arguments for function `{}`: expected {}, found {}",
-                    name,
-                    arg_names.len(),
-                    args.len(),
-                ))
+                Err(format!("Cannot find function `{}` in scope", name))
             }
-        } else {
-            Err(format!("Cannot find function `{}` in scope", name))
-        },
-        Expr::Fn { name, args, body, then } => {
+        }
+        Expr::Fn {
+            name,
+            args,
+            body,
+            then,
+        } => {
             funcs.push((name, args, body));
             let output = eval(then, vars, funcs);
             funcs.pop();
             output
-        },
+        }
     }
 }
 ```
@@ -812,18 +822,23 @@ then execute the body of the function (making sure to evaluate and push the argu
 
 As before, we'll need to change the `eval` call in `main` to:
 
-```rust
+```rust ignore
 eval(&ast, &mut Vec::new(), &mut Vec::new())
 ```
 
 Give the interpreter a test - see what you can do with it! Here's an example program to get you started:
 
-```
+```ignore
 let five = 5;
 let eight = 3 + five;
 fn add x y = x + y;
 add(five, eight)
 ```
+
+## Full source code
+
+You can find the full source code for Foo [in the crate
+examples](https://github.com/zesterer/chumsky/blob/main/examples/foo.rs).
 
 ## Conclusion
 

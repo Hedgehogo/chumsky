@@ -140,12 +140,13 @@ fn main() {
         .expect("Failed to read file");
 
     let (json, errs) = parser().parse(src.trim()).into_output_errors();
-    println!("{:#?}", json);
+    println!("{json:#?}");
     errs.into_iter().for_each(|e| {
-        Report::build(ReportKind::Error, (), e.span().start)
+        Report::build(ReportKind::Error, ((), e.span().into_range()))
+            .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
             .with_message(e.to_string())
             .with_label(
-                Label::new(e.span().into_range())
+                Label::new(((), e.span().into_range()))
                     .with_message(e.reason().to_string())
                     .with_color(Color::Red),
             )

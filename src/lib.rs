@@ -4,18 +4,13 @@
     feature = "nightly",
     feature(never_type, fn_traits, tuple_trait, unboxed_closures)
 )]
-#![doc = include_str!("../README2.md")]
-#![doc = "## Examples"]
-#![doc = concat!("-", "[Brainfuck parser](", env!("CHUMSKY_REPO_URL"), "/examples/brainfuck.rs", ")\n\n")]
-#![doc = concat!("-", "[JSON parser](", env!("CHUMSKY_REPO_URL"), "/examples/json.rs", ")\n\n")]
-#![doc = concat!("-", "[A small Rust-like language](", env!("CHUMSKY_REPO_URL"), "/examples/nano_rust.rs", ")\n\n")]
+#![doc = include_str!("../README.md")]
 #![deny(missing_docs, clippy::undocumented_unsafe_blocks)]
 #![allow(
     clippy::should_implement_trait,
     clippy::type_complexity,
     clippy::result_unit_err
 )]
-// TODO: Talk about `.map` and purity assumptions
 
 extern crate alloc;
 extern crate core;
@@ -29,27 +24,6 @@ macro_rules! go_extra {
         #[inline(always)]
         fn go_check(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<Check, $O> {
             Parser::<I, $O, E>::go::<Check>(self, inp)
-        }
-    };
-}
-
-macro_rules! go_cfg_extra {
-    ( $O :ty ) => {
-        #[inline(always)]
-        fn go_emit_cfg(
-            &self,
-            inp: &mut InputRef<'src, '_, I, E>,
-            cfg: Self::Config,
-        ) -> PResult<Emit, $O> {
-            ConfigParser::<I, $O, E>::go_cfg::<Emit>(self, inp, cfg)
-        }
-        #[inline(always)]
-        fn go_check_cfg(
-            &self,
-            inp: &mut InputRef<'src, '_, I, E>,
-            cfg: Self::Config,
-        ) -> PResult<Check, $O> {
-            ConfigParser::<I, $O, E>::go_cfg::<Check>(self, inp, cfg)
         }
     };
 }
@@ -69,7 +43,6 @@ pub mod extra;
 pub mod guide;
 pub mod input;
 pub mod inspector;
-#[cfg(feature = "label")]
 pub mod label;
 #[cfg(feature = "lexical-numbers")]
 pub mod number;
@@ -84,6 +57,8 @@ pub mod regex;
 pub mod span;
 mod stream;
 pub mod text;
+#[cfg(feature = "bytes")]
+mod tokio;
 pub mod util;
 
 /// Commonly used functions, traits and types.
@@ -136,8 +111,6 @@ use hashbrown::HashMap;
 #[cfg(feature = "serde")]
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
-#[cfg(feature = "label")]
-use self::label::{LabelError, Labelled};
 use self::{
     combinator::*,
     container::*,
@@ -147,6 +120,7 @@ use self::{
         BorrowInput, Emitter, ExactSizeInput, InputRef, MapExtra, SliceInput, StrInput, ValueInput,
     },
     inspector::Inspector,
+    label::{LabelError, Labelled},
     prelude::*,
     primitive::Any,
     private::{Check, Emit, IPResult, Located, MaybeUninitExt, Mode, PResult, Sealed},
@@ -185,6 +159,36 @@ impl<T> core::panic::RefUnwindSafe for EmptyPhantom<T> {}
 pub(crate) type DynParser<'src, 'b, I, O, E> = dyn Parser<'src, I, O, E> + 'b;
 #[cfg(feature = "pratt")]
 pub(crate) type DynOperator<'src, 'b, I, O, E> = dyn pratt::Operator<'src, I, O, E> + 'b;
+
+/// Labels corresponding to a variety of patterns.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum DefaultExpected<'a, T> {
+    /// A specific token was expected.
+    Token(MaybeRef<'a, T>),
+    /// Anything other than the end of input was expected.
+    Any,
+    /// Something other than the provided input was expected.
+    SomethingElse,
+    /// The end of input was expected.
+    EndOfInput,
+}
+
+impl<T> DefaultExpected<'_, T> {
+    /// Convert this [`DefaultExpected`] into an owned version of itself, cloning any inner references if required.
+    #[inline]
+    pub fn into_owned(self) -> DefaultExpected<'static, T>
+    where
+        T: Clone,
+    {
+        match self {
+            Self::Token(tok) => DefaultExpected::Token(tok.into_owned()),
+            Self::Any => DefaultExpected::Any,
+            Self::SomethingElse => DefaultExpected::SomethingElse,
+            Self::EndOfInput => DefaultExpected::EndOfInput,
+        }
+    }
+}
 
 /// The result of performing a parse on an input with [`Parser`].
 ///
@@ -359,6 +363,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         let res = self.then_ignore(end()).go::<Emit>(&mut inp);
         let alt = inp.take_alt().map(|alt| alt.err).unwrap_or_else(|| {
             let fake_span = inp.span_since(&inp.cursor());
+            // TODO: Why is this needed?
             E::Error::expected_found([], None, fake_span)
         });
         let mut errs = own.into_errs();
@@ -407,6 +412,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         let res = self.then_ignore(end()).go::<Check>(&mut inp);
         let alt = inp.take_alt().map(|alt| alt.err).unwrap_or_else(|| {
             let fake_span = inp.span_since(&inp.cursor());
+            // TODO: Why is this needed?
             E::Error::expected_found([], None, fake_span)
         });
         let mut errs = own.into_errs();
@@ -422,6 +428,34 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
 
     /// Convert the output of this parser into a slice of the input, based on the current parser's
     /// span.
+    ///
+    /// Note: unlike the parser `.repeated().collect()`, this method includes all tokens that are
+    /// "ignored" by the parser, including any padding, separators, and sub-parsers with
+    /// [`Parser::ignored`], [`Parser::ignore_then`], and [`Parser::then_ignore`].
+    ///
+    /// # Examples
+    /// Example with input of type `&str` (token type is `char`).
+    /// ```
+    /// # use chumsky::prelude::*;
+    /// // Matches a number with underscores that is surrounded by apostrophes.
+    /// let quoted_numeric = any::<&str, extra::Err<Simple<char>>>()
+    ///     .filter(|c: &char| c.is_digit(10))
+    ///     .separated_by(just("_").repeated().at_most(1))
+    ///     .to_slice()
+    ///     .padded_by(just("'"));
+    /// assert_eq!(quoted_numeric.parse("'1_23'").into_result(), Ok("1_23"));
+    /// ```
+    /// Example with input of type `&[u32]` (token type is `u32`).
+    /// ```
+    /// # use chumsky::prelude::*;
+    /// // Matches even numbers, then ignoring the rest of the input when an odd number is reached.
+    /// let even_matcher = any::<&[u32], extra::Err<Simple<u32>>>()
+    ///     .filter(|c: &u32| c % 2 == 0)
+    ///     .repeated()
+    ///     .to_slice()
+    ///     .lazy();
+    /// assert_eq!(even_matcher.parse(&[2, 4, 8, 5, 6]).unwrap(), &[2, 4, 8]);
+    /// ```
     fn to_slice(self) -> ToSlice<Self, O>
     where
         Self: Sized,
@@ -498,7 +532,9 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         }
     }
 
-    /// Map the output of this parser to another value, with the opportunity to get extra metadata.
+    /// Map the output of this parser to another value, with the opportunity to get extra metadata from the parse like the span or parser state.
+    ///
+    /// See the docs for [`MapExtra`] for examples of metadata that can be fetched.
     ///
     /// The output type of this parser is `U`, the same as the function's output.
     ///
@@ -696,6 +732,44 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
             phantom: EmptyPhantom::new(),
         }
     }
+    /// Left-fold the output of the parser into a single value, possibly failing during the reduction.
+    /// The parser only consumes input from the inner parser until it either completes or the reduction
+    /// step fails ("short circuting").
+    ///
+    /// The output type of this parser is `A`, the left-hand component of the original parser's output.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use chumsky::{prelude::*, error::Simple};
+    /// let int = text::int::<_, extra::Err<Simple<char>>>(10)
+    ///     .from_str::<u8>()
+    ///     .unwrapped();
+    ///
+    /// let sum = int
+    ///     .clone()
+    ///     .try_foldl(just('+').ignore_then(int).repeated(), |a, b, e| a.checked_add(b).ok_or(Simple::new(None, e.span())));
+    ///
+    /// assert_eq!(sum.parse("1+12+3+9").into_result(), Ok(25));
+    /// assert_eq!(sum.parse("6").into_result(), Ok(6));
+    /// assert!(sum.parse("255+1").has_errors()); // due to u8 overflow
+    /// ```
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn try_foldl<B, F, OB>(self, other: B, f: F) -> TryFoldl<F, Self, B, OB, E>
+    where
+        F: Fn(O, OB, &mut MapExtra<'src, '_, I, E>) -> Result<O, E::Error>,
+        B: IterParser<'src, I, OB, E>,
+        Self: Sized,
+    {
+        TryFoldl {
+            parser_a: self,
+            parser_b: other,
+            folder: f,
+            #[cfg(debug_assertions)]
+            location: *Location::caller(),
+            phantom: EmptyPhantom::new(),
+        }
+    }
 
     /// After a successful parse, apply a fallible function to the output. If the function produces an error, treat it
     /// as a parsing error.
@@ -837,7 +911,6 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// within the parser. For example, labelling a parser for an expression would yield "expected expression" errors
     /// rather than "expected integer, string, binary op, etc." errors.
     // TODO: Example
-    #[cfg(feature = "label")]
     fn labelled<L>(self, label: L) -> Labelled<Self, L>
     where
         Self: Sized,
@@ -1094,7 +1167,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         }
     }
 
-    /// Run the previous contextual parser with the provided context
+    /// Run the previous contextual parser with the provided context.
     ///
     /// ```
     /// # use chumsky::prelude::*;
@@ -1102,7 +1175,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///
     /// let generic = just(b'0').configure(|cfg, ctx: &u8| cfg.seq(*ctx));
     ///
-    /// let parse_a = just::<_, _, extra::Default>(b'b').ignore_then(generic.with_ctx::<u8>(b'a'));
+    /// let parse_a = just::<_, _, extra::Default>(b'b').ignore_then(generic.with_ctx(b'a'));
     /// let parse_b = just::<_, _, extra::Default>(b'a').ignore_then(generic.with_ctx(b'b'));
     ///
     /// assert_eq!(parse_a.parse(b"ba" as &[_]).into_result(), Ok::<_, Vec<EmptyErr>>(b'a'));
@@ -1110,15 +1183,22 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// assert_eq!(parse_b.parse(b"ab" as &[_]).into_result(), Ok(b'b'));
     /// assert!(parse_b.parse(b"aa").has_errors());
     /// ```
-    fn with_ctx<Ctx>(self, ctx: Ctx) -> WithCtx<Self, Ctx>
+    fn with_ctx(self, ctx: E::Context) -> WithCtx<Self, E::Context>
     where
         Self: Sized,
-        Ctx: 'src + Clone,
+        E::Context: Clone,
     {
         WithCtx { parser: self, ctx }
     }
 
-    /// TODO
+    /// Runs the previous parser with the provided state.
+    ///
+    /// This is very uncommonly used and exists mostly for completeness.
+    ///
+    /// One possible use-case is 'glueing' together parsers declared in different places with incompatible state types.
+    ///
+    /// Note that the state value will be cloned and dropping *during* parsing, so it is recommended to ensure that
+    /// this is a relatively performant operation.
     fn with_state<State>(self, state: State) -> WithState<Self, State>
     where
         Self: Sized,
@@ -1640,8 +1720,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         Rewind { parser: self }
     }
 
-    /// Make the parser lazy, such that it parses as much as it validly can and then finished successfully, leaving
-    /// trailing input untouched.
+    /// Make the parser lazy, such that it parses as much of the input as it can finishes successfully, leaving the trailing input untouched.
     ///
     /// The output type of this parser is `O`, the same as the original parser.
     ///
@@ -1852,10 +1931,9 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// To show the difference in behavior from [`Parser::try_map`]:
     ///
     /// ```
-    /// # use chumsky::prelude::*;
-    /// # use chumsky::util::MaybeRef;
-    /// # use chumsky::error::Error;
-    /// // start with the same large_int validator
+    /// # use chumsky::{text::TextExpected, util::MaybeRef, error::LabelError, prelude::*};
+    ///
+    /// // Start with the same large_int validator
     /// let large_int_val = text::int::<_, extra::Err<Rich<char>>>(10)
     ///         .from_str()
     ///         .unwrapped()
@@ -1897,7 +1975,7 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     ///     multi_step_val.parse("100 2").into_result(),
     ///     Err(vec![
     ///         Rich::<char>::custom((0..3).into(), "100 must be 256 or higher"),
-    ///         <Rich<char> as Error<&str>>::expected_found([], Some(MaybeRef::Val('2')), (4..5).into()),
+    ///         <Rich<char> as LabelError<&str, _>>::expected_found([TextExpected::<&str>::IdentifierPart], Some(MaybeRef::Val('2')), (4..5).into()),
     ///     ])
     /// );
     ///
@@ -2008,7 +2086,24 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// The resulting iterable parser will emit each element of the output type in turn.
     ///
     /// This is *broadly* analogous to functions like [`Vec::into_iter`], but operating at the level of parser outputs.
-    // TODO: Example
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use chumsky::prelude::*;
+    /// // Parses whole integers
+    /// let num = text::int::<&str, extra::Default>(10).padded().map(|x: &str| x.parse::<u64>().unwrap());
+    /// // Parses a range like `0..4` into a vector like `[0, 1, 2, 3]`
+    /// let range = num.then_ignore(just("..")).then(num)
+    ///     .map(|(x, y)| x..y)
+    ///     .into_iter()
+    ///     .collect::<Vec<u64>>();
+    /// // Parses a list of numbers into a vector
+    /// let list = num.separated_by(just(',')).collect::<Vec<u64>>();
+    /// let set = range.or(list);
+    /// assert_eq!(set.parse("0, 1, 2, 3").unwrap(), [0, 1, 2, 3]);
+    /// assert_eq!(set.parse("0..4").unwrap(), [0, 1, 2, 3]);
+    /// ```
     fn into_iter(self) -> IntoIter<Self, O>
     where
         Self: Sized,
@@ -2085,11 +2180,11 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
     /// use chumsky::prelude::*;
     ///
     /// pub trait Parseable: Sized {
-    ///     fn parser<'src>() -> Boxed<'src, 'src, &'src str, Self, extra::Default>;
+    ///     fn parser<'src>() -> Boxed<'src, 'src, &'src str, Self>;
     /// }
     ///
     /// impl Parseable for i32 {
-    ///     fn parser<'src>() -> Boxed<'src, 'src, &'src str, Self, extra::Default> {
+    ///     fn parser<'src>() -> Boxed<'src, 'src, &'src str, Self> {
     ///         todo().boxed()
     ///     }
     /// }
@@ -2127,6 +2222,41 @@ pub trait Parser<'src, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Defau
         Self: Sized + 'src,
     {
         self
+    }
+
+    /// Have this parser be enabled or disabled depending on context.
+    ///
+    /// This method, by itself, does nothing: you must use [`ConfigParser::configure`] to specify when the parser is
+    /// enabled.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use chumsky::prelude::*;
+    ///
+    /// // Our parser can be in two modes depending on context: hexadecimal, or denary
+    /// #[derive(Clone)]
+    /// enum Mode { Hex, Dec }
+    ///
+    /// let digits = one_of::<_, _, extra::Context<Mode>>("0123456789")
+    ///     .or(one_of("abcdef").contextual().configure(|cfg, ctx| matches!(ctx, Mode::Hex)))
+    ///     .repeated();
+    ///
+    /// let num = just::<_, _, extra::Default>("0x").ignore_then(digits.with_ctx(Mode::Hex))
+    ///     // Fallback: when '0x' isn't present, parse using denary mode
+    ///     .or(digits.with_ctx(Mode::Dec))
+    ///     .to_slice();
+    ///
+    /// assert_eq!(num.parse("0x1a3f5b").into_result(), Ok("0x1a3f5b"));
+    /// assert_eq!(num.parse("12345").into_result(), Ok("12345"));
+    /// // Without the '0x' prefix, hexadecimal digits are invalid
+    /// assert!(num.parse("1a3f5b").has_errors());
+    /// ```
+    fn contextual(self) -> Contextual<Self>
+    where
+        Self: Sized,
+    {
+        Contextual { inner: self }
     }
 
     /// Use [Pratt parsing](https://en.wikipedia.org/wiki/Operator-precedence_parser#Pratt_parsing) to ergonomically
@@ -2215,22 +2345,26 @@ where
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<M, O>
-    where
-        Self: Sized;
+    ) -> PResult<M, O>;
 
     #[doc(hidden)]
+    #[inline(always)]
     fn go_emit_cfg(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<Emit, O>;
+    ) -> PResult<Emit, O> {
+        self.go_cfg::<Emit>(inp, cfg)
+    }
     #[doc(hidden)]
+    #[inline(always)]
     fn go_check_cfg(
         &self,
         inp: &mut InputRef<'src, '_, I, E>,
         cfg: Self::Config,
-    ) -> PResult<Check, O>;
+    ) -> PResult<Check, O> {
+        self.go_cfg::<Check>(inp, cfg)
+    }
 
     /// A combinator that allows configuration of the parser from the current context. Context
     /// is most often derived from [`Parser::ignore_with_ctx`], [`Parser::then_with_ctx`] or [`map_ctx`],
@@ -2660,7 +2794,7 @@ where
 /// efficient cloning. This is likely to change in the future. Unlike [`Box`], [`Rc`] has no size guarantees: although
 /// it is *currently* the same size as a raw pointer.
 // TODO: Don't use an Rc (why?)
-pub struct Boxed<'src, 'b, I: Input<'src>, O, E: ParserExtra<'src, I>> {
+pub struct Boxed<'src, 'b, I: Input<'src>, O, E: ParserExtra<'src, I> = extra::Default> {
     inner: Rc<DynParser<'src, 'b, I, O, E>>,
 }
 
@@ -3131,7 +3265,7 @@ mod tests {
                 atom.clone()
                     .then_ignore(just('+'))
                     .then(atom.clone())
-                    .map(|(a, b)| format!("{}{}", a, b))
+                    .map(|(a, b)| format!("{a}{b}"))
                     .memoized()
                     .or(atom)
             })
@@ -3161,7 +3295,7 @@ mod tests {
                     .clone()
                     .then_ignore(just('+'))
                     .then(expr)
-                    .map(|(a, b)| format!("{}{}", a, b))
+                    .map(|(a, b)| format!("{a}{b}"))
                     .memoized();
 
                 sum.or(atom)
@@ -3191,7 +3325,7 @@ mod tests {
         //             .clone()
         //             .then_ignore(just('+'))
         //             .then(expr)
-        //             .map(|(a, b)| format!("{}{}", a, b));
+        //             .map(|(a, b)| format!("{a}{b}"));
 
         //         sum.or(atom)
         //     })
@@ -3310,7 +3444,7 @@ mod tests {
                 .clone()
                 .then_ignore(just('+'))
                 .then(expr.clone())
-                .map(|(a, b)| format!("{}{}", a, b));
+                .map(|(a, b)| format!("{a}{b}"));
 
             sum.or(atom)
         });
@@ -3397,24 +3531,26 @@ mod tests {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     struct MyErr(&'static str);
 
-    impl<'src, I> crate::Error<'src, I> for MyErr
+    impl<'src, I: Input<'src>> crate::Error<'src, I> for MyErr {
+        fn merge(self, other: Self) -> Self {
+            if other == MyErr("special") {
+                MyErr("special")
+            } else {
+                self
+            }
+        }
+    }
+
+    impl<'src, I> crate::LabelError<'src, I, crate::DefaultExpected<'src, I::Token>> for MyErr
     where
         I: Input<'src>,
     {
-        fn expected_found<E: IntoIterator<Item = Option<crate::MaybeRef<'src, I::Token>>>>(
+        fn expected_found<E: IntoIterator<Item = crate::DefaultExpected<'src, I::Token>>>(
             _expected: E,
             _found: Option<crate::MaybeRef<'src, I::Token>>,
             _span: I::Span,
         ) -> Self {
             MyErr("expected found")
-        }
-
-        fn merge(self, other: Self) -> Self {
-            if self == MyErr("special") || other == MyErr("special") {
-                MyErr("special")
-            } else {
-                self
-            }
         }
     }
 
@@ -3480,6 +3616,25 @@ mod tests {
     }
 
     #[test]
+    fn iterable_then() {
+        fn parser<'src>() -> impl Parser<'src, &'src str, Vec<char>> {
+            just('a')
+                .map(Some)
+                .into_iter()
+                .then(just('b').repeated())
+                .then(just('c').repeated())
+                .collect()
+        }
+
+        assert_eq!(
+            parser().parse("abbcc").into_result(),
+            Ok(vec!['a', 'b', 'b', 'c', 'c'])
+        );
+        assert_eq!(parser().parse("acc").into_result(), Ok(vec!['a', 'c', 'c']));
+        assert!(parser().parse("bbc").has_errors());
+    }
+
+    #[test]
     #[cfg(feature = "unstable")]
     fn cached() {
         fn my_parser<'src>() -> impl Parser<'src, &'src str, &'src str, extra::Default> {
@@ -3535,7 +3690,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "label")]
     #[test]
     fn label() {
         use crate::label::LabelError;
@@ -3544,20 +3698,20 @@ mod tests {
             just("hello").labelled("greeting").as_context().ignored()
         }
 
-        let mut err = <Rich<_> as crate::Error<&str>>::expected_found(
-            Some(Some('h'.into())),
+        let mut err = <Rich<_> as crate::LabelError<&str, char>>::expected_found(
+            ['h'],
             Some('b'.into()),
             (0..1).into(),
         );
-        <Rich<_, _, _> as LabelError<&str, _>>::label_with(&mut err, "greeting");
+        <Rich<_, _> as LabelError<&str, _>>::label_with(&mut err, "greeting");
         assert_eq!(parser().parse("bye").into_errors(), vec![err]);
 
-        let mut err = <Rich<_> as crate::Error<&str>>::expected_found(
-            Some(Some('l'.into())),
+        let mut err = <Rich<_> as crate::LabelError<&str, char>>::expected_found(
+            ['l'],
             Some('p'.into()),
             (3..4).into(),
         );
-        <Rich<_, _, _> as LabelError<&str, _>>::in_context(&mut err, "greeting", (0..3).into());
+        <Rich<_, _> as LabelError<&str, _>>::in_context(&mut err, "greeting", (0..3).into());
         assert_eq!(parser().parse("help").into_errors(), vec![err]);
 
         fn parser2<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
@@ -3567,19 +3721,16 @@ mod tests {
                 .ignored()
         }
 
-        let mut err = <Rich<_> as crate::Error<&str>>::expected_found(
-            Some(Some('h'.into())),
-            None,
-            (0..7).into(),
-        );
-        <Rich<_, _, _> as LabelError<&str, _>>::label_with(&mut err, "greeting");
+        let mut err =
+            <Rich<_> as crate::LabelError<&str, char>>::expected_found(['h'], None, (0..7).into());
+        <Rich<_, _> as LabelError<&str, _>>::label_with(&mut err, "greeting");
         assert_eq!(parser2().parse("goodbye").into_errors(), vec![err]);
     }
 
     #[test]
     #[allow(dead_code)]
     fn invalid_escape() {
-        use crate::error::Error;
+        use crate::LabelError;
 
         fn string<'src>() -> impl Parser<'src, &'src str, &'src str, extra::Err<Rich<'src, char>>> {
             let quote = just("\"");
@@ -3596,27 +3747,29 @@ mod tests {
 
         assert_eq!(
             string().parse(r#""Hello\m""#).into_result(),
-            Err(vec![<Rich<char> as Error::<&str>>::expected_found(
-                Some(Some('n'.into())),
-                Some('m'.into()),
-                (7..8).into(),
-            )]),
+            Err(vec![
+                <Rich<char> as LabelError::<&str, char>>::expected_found(
+                    ['n'],
+                    Some('m'.into()),
+                    (7..8).into(),
+                )
+            ]),
         );
     }
 
     #[test]
     #[allow(dead_code)]
     fn map_err_missed_info() {
-        use crate::error::Error;
+        use crate::LabelError;
 
         fn zero<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
             just("-")
                 .or_not()
                 .then(just("0").map_err(move |e: Rich<_>| {
-                    Error::<&str>::expected_found(
-                        vec![Some('n'.into())],
+                    LabelError::<&str, char>::expected_found(
+                        ['n'],
                         e.found().map(|i| From::from(*i)),
-                        e.span().clone(),
+                        *e.span(),
                     )
                 }))
                 .ignored()
@@ -3624,32 +3777,153 @@ mod tests {
 
         assert_eq!(
             zero().parse("_0").into_result(),
-            Err(vec![<Rich<char> as Error::<&str>>::expected_found(
-                vec![Some('-'.into()), Some('n'.into())],
-                Some('_'.into()),
-                (0..1).into(),
-            )]),
+            Err(vec![
+                <Rich<char> as LabelError::<&str, char>>::expected_found(
+                    ['-', 'n'],
+                    Some('_'.into()),
+                    (0..1).into(),
+                )
+            ]),
         );
     }
 
     #[test]
     fn map_err() {
-        use crate::{error::Error, util::Maybe::Val};
+        use crate::LabelError;
 
         let parser = just::<char, &str, extra::Err<_>>('"').map_err(move |e: Rich<char>| {
             println!("Found = {:?}", e.found());
             println!("Expected = {:?}", e.expected().collect::<Vec<_>>());
             println!("Span = {:?}", e.span());
-            Error::<&str>::expected_found([Some(Val('"'))], e.found().copied().map(Val), *e.span())
+            LabelError::<&str, char>::expected_found(
+                ['"'],
+                e.found().copied().map(Into::into),
+                *e.span(),
+            )
         });
 
         assert_eq!(
             parser.parse(r#"H"#).into_result(),
-            Err(vec![Error::<&str>::expected_found(
-                [Some(Val('"'))],
-                Some(Val('H')),
+            Err(vec![LabelError::<&str, char>::expected_found(
+                ['"'],
+                Some('H'.into()),
                 (0..1).into()
             )])
         );
     }
+
+    #[test]
+    fn filter() {
+        use crate::{DefaultExpected, LabelError};
+
+        let parser = group((
+            just("a").or_not(),
+            just("b").filter(|_| false).or_not(),
+            just::<_, &str, extra::Err<Rich<_>>>("c"),
+        ));
+
+        assert_eq!(
+            parser.parse("b").into_output_errors(),
+            (
+                None,
+                vec![LabelError::<&str, _>::expected_found(
+                    vec![
+                        DefaultExpected::Token('a'.into()),
+                        DefaultExpected::SomethingElse,
+                        DefaultExpected::Token('c'.into()),
+                    ],
+                    Some('b'.into()),
+                    SimpleSpan::new((), 0..1)
+                )]
+            )
+        );
+    }
+
+    #[test]
+    fn zero_size_custom_failure() {
+        fn my_custom<'src>() -> impl Parser<'src, &'src str, ()> {
+            custom(|inp| {
+                let check = inp.save();
+                if inp.parse(just("foo")).is_err() {
+                    inp.rewind(check);
+                }
+                Ok(())
+            })
+        }
+
+        assert!(my_custom().parse("not foo").has_errors());
+    }
+
+    #[test]
+    fn labels() {
+        use crate::{DefaultExpected, Error, LabelError, TextExpected};
+
+        let parser = just("a")
+            .or_not()
+            .then(text::whitespace::<&str, extra::Err<Rich<_>>>());
+
+        assert_eq!(
+            parser.parse("b").into_output_errors(),
+            (
+                None,
+                vec![Error::<&str>::merge(
+                    Error::<&str>::merge(
+                        LabelError::<&str, _>::expected_found(
+                            vec![DefaultExpected::Token('a'.into())],
+                            Some('b'.into()),
+                            SimpleSpan::new((), 0..1)
+                        ),
+                        LabelError::<&str, _>::expected_found(
+                            vec![TextExpected::<&str>::Whitespace],
+                            Some('b'.into()),
+                            SimpleSpan::new((), 0..1)
+                        ),
+                    ),
+                    LabelError::<&str, _>::expected_found(
+                        vec![DefaultExpected::EndOfInput],
+                        Some('b'.into()),
+                        SimpleSpan::new((), 0..1)
+                    ),
+                )]
+            )
+        );
+    }
+
+    /*
+    #[test]
+    fn label_sets() {
+        use crate::{DefaultExpected, Error, LabelError, TextExpected, text::whitespace};
+
+        fn tuple<'input>() -> impl Parser<'input, &'input str, (), extra::Err<Rich<'input, char, SimpleSpan>>> {
+            just("a")
+                .repeated()
+                .then_ignore(whitespace())
+                .separated_by(just(","))
+                .then_ignore(just(")"))
+        }
+
+        assert_eq!(
+            tuple().parse("a").into_output_errors(),
+            (
+                None,
+                vec![Error::<&str>::merge(
+                    LabelError::<&str, _>::expected_found(
+                        vec![TextExpected::<&str>::Whitespace],
+                        None,
+                        SimpleSpan::new((), 1..1)
+                    ),
+                    LabelError::<&str, _>::expected_found(
+                        vec![
+                            DefaultExpected::Token('a'.into()),
+                            DefaultExpected::Token(','.into()),
+                            DefaultExpected::Token(')'.into()),
+                        ],
+                        None,
+                        SimpleSpan::new((), 1..1)
+                    )
+                )]
+            )
+        );
+    }
+    */
 }

@@ -26,12 +26,16 @@ pub const fn number<const F: u128, I, O, E>() -> Number<F, I, O, E> {
     }
 }
 
+/// A label denoting a parseable number.
+pub struct ExpectedNumber;
+
 impl<'src, const F: u128, I, O, E> Parser<'src, I, O, E> for Number<F, I, O, E>
 where
     O: FromLexical,
     I: SliceInput<'src, Cursor = usize>,
     <I as SliceInput<'src>>::Slice: AsRef<[u8]>,
     E: ParserExtra<'src, I>,
+    E::Error: LabelError<'src, I, ExpectedNumber>,
 {
     #[inline]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
@@ -45,7 +49,7 @@ where
             Err(_err) => {
                 // TODO: Improve error
                 let span = inp.span_since(&before);
-                inp.add_alt(None, None, span);
+                inp.add_alt([ExpectedNumber], None, span);
                 Err(())
             }
         }
@@ -92,7 +96,7 @@ mod tests {
         fn huge_pow10() {
             for e in 300..310 {
                 for i in 0..100000 {
-                    validate(&format!("{}e{}", i, e));
+                    validate(&format!("{i}e{e}"));
                 }
             }
         }
@@ -119,8 +123,8 @@ mod tests {
                         continue;
                     }
 
-                    validate(&format!("{}e{}", i, e));
-                    validate(&format!("{}e-{}", i, e));
+                    validate(&format!("{i}e{e}"));
+                    validate(&format!("{i}e-{e}"));
                 }
             }
         }
@@ -129,9 +133,9 @@ mod tests {
         fn subnorm() {
             for bits in 0u32..(1 << 21) {
                 let single: f32 = f32::from_bits(bits);
-                validate(&format!("{:e}", single));
+                validate(&format!("{single:e}"));
                 let double: f64 = f64::from_bits(bits as u64);
-                validate(&format!("{:e}", double));
+                validate(&format!("{double:e}"));
             }
         }
 
@@ -139,7 +143,7 @@ mod tests {
         fn tiny_pow10() {
             for e in 301..327 {
                 for i in 0..100000 {
-                    validate(&format!("{}e-{}", i, e));
+                    validate(&format!("{i}e-{e}"));
                 }
             }
         }

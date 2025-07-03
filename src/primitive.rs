@@ -47,7 +47,7 @@ where
             Some(tok) => {
                 let span = inp.span_since(before.cursor());
                 inp.rewind(before);
-                inp.add_alt(Some(None), Some(tok.into()), span);
+                inp.add_alt([DefaultExpected::EndOfInput], Some(tok.into()), span);
                 Err(())
             }
         }
@@ -126,7 +126,7 @@ impl<T: Clone, I, E> Clone for Just<T, I, E> {
 
 /// A parser that accepts only the given input.
 ///
-/// The output type of this parser is `C`, the input or sequence that was provided.
+/// The output type of this parser is `T`, the input or sequence that was provided.
 ///
 /// # Examples
 ///
@@ -192,7 +192,7 @@ where
                     let span = inp.span_since(before.cursor());
                     inp.rewind(before);
                     inp.add_alt(
-                        Some(Some(T::to_maybe_ref(next))),
+                        [DefaultExpected::Token(T::to_maybe_ref(next))],
                         found.map(|f| f.into()),
                         span,
                     );
@@ -203,8 +203,6 @@ where
 
         Ok(M::bind(|| seq.clone()))
     }
-
-    go_cfg_extra!(T);
 }
 
 /// See [`one_of`].
@@ -270,7 +268,9 @@ where
                 let err_span = inp.span_since(before.cursor());
                 inp.rewind(before);
                 inp.add_alt(
-                    self.seq.seq_iter().map(|e| Some(T::to_maybe_ref(e))),
+                    self.seq
+                        .seq_iter()
+                        .map(|e| DefaultExpected::Token(T::to_maybe_ref(e))),
                     found.map(|f| f.into()),
                     err_span,
                 );
@@ -344,7 +344,11 @@ where
             found => {
                 let err_span = inp.span_since(before.cursor());
                 inp.rewind(before);
-                inp.add_alt(None, found.map(|f| f.into()), err_span);
+                inp.add_alt(
+                    [DefaultExpected::SomethingElse],
+                    found.map(|f| f.into()),
+                    err_span,
+                );
                 Err(())
             }
         }
@@ -370,19 +374,31 @@ impl<F: Clone, I, O, E> Clone for Custom<F, I, O, E> {
     }
 }
 
-/// TODO
+/// Declare a parser that uses custom imperative parsing logic.
+///
+/// This is useful when a particular parser is difficult or impossible to express with chumsky's built-in combinators
+/// alone. For example, custom context-sensitive logic can often be implemented using a custom parser and then
+/// integrated seamlessly into a more 'vanilla' chumsky parser.
+///
+/// See the [`InputRef`] docs for information about what operations custom parsers can perform.
+///
+/// If you are building a library of custom parsers, it is recommended to make use of the [`extension`] API.
 ///
 /// # Example
 ///
 /// ```
-/// # use chumsky::{prelude::*, error::Simple};
+/// # use chumsky::{prelude::*, error::{Simple, LabelError}};
 ///
-/// let x = custom::<_, &str, _, extra::Err<Simple<char>>>(|inp| {
-///     let _ = inp.next();
-///     Ok(())
+/// let question = custom::<_, &str, _, extra::Err<Simple<char>>>(|inp| {
+///     let before = inp.cursor();
+///     match inp.next() {
+///         Some('?') => Ok(()),
+///         found => Err(Simple::new(found.map(Into::into), inp.span_since(&before))),
+///     }
 /// });
 ///
-/// assert_eq!(x.parse("!").into_result(), Ok(()));
+/// assert_eq!(question.parse("?").into_result(), Ok(()));
+/// assert!(question.parse("!").has_errors());
 /// ```
 pub const fn custom<'src, F, I, O, E>(f: F) -> Custom<F, I, O, E>
 where
@@ -450,7 +466,7 @@ where
 
 impl<'src, I, O, E, F> Parser<'src, I, O, E> for Select<F, I, O, E>
 where
-    I: ValueInput<'src>,
+    I: Input<'src>,
     I::Token: Clone + 'src,
     E: ParserExtra<'src, I>,
     F: Fn(I::Token, &mut MapExtra<'src, '_, I, E>) -> Option<O>,
@@ -458,10 +474,13 @@ where
     #[inline]
     fn go<M: Mode>(&self, inp: &mut InputRef<'src, '_, I, E>) -> PResult<M, O> {
         let before = inp.save();
-        let next = inp.next_inner();
+        let next = inp.next_maybe_inner();
         let found = match next {
             Some(tok) => {
-                match (self.filter)(tok.clone(), &mut MapExtra::new(before.cursor(), inp)) {
+                match (self.filter)(
+                    tok.borrow().clone(),
+                    &mut MapExtra::new(before.cursor(), inp),
+                ) {
                     Some(out) => return Ok(M::bind(|| out)),
                     None => Some(tok.into()),
                 }
@@ -470,7 +489,7 @@ where
         };
         let err_span = inp.span_since(before.cursor());
         inp.rewind(before);
-        inp.add_alt(None, found, err_span);
+        inp.add_alt([DefaultExpected::SomethingElse], found, err_span);
         Err(())
     }
 
@@ -528,7 +547,7 @@ where
         };
         let err_span = inp.span_since(before.cursor());
         inp.rewind(before);
-        inp.add_alt(None, found, err_span);
+        inp.add_alt([DefaultExpected::SomethingElse], found, err_span);
         Err(())
     }
 
@@ -561,7 +580,7 @@ where
             found => {
                 let err_span = inp.span_since(before.cursor());
                 inp.rewind(before);
-                inp.add_alt(None, found.map(|f| f.into()), err_span);
+                inp.add_alt([DefaultExpected::Any], found.map(|f| f.into()), err_span);
                 Err(())
             }
         }
@@ -617,7 +636,7 @@ where
             found => {
                 let err_span = inp.span_since(before.cursor());
                 inp.rewind(before);
-                inp.add_alt(None, found.map(|f| f.into()), err_span);
+                inp.add_alt([DefaultExpected::Any], found.map(|f| f.into()), err_span);
                 Err(())
             }
         }
@@ -944,7 +963,7 @@ where
         if self.parsers.is_empty() {
             let offs = inp.cursor();
             let err_span = inp.span_since(&offs);
-            inp.add_alt(None, None, err_span);
+            inp.add_alt([], None, err_span);
             Err(())
         } else {
             let before = inp.save();

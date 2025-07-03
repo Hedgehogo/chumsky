@@ -1,34 +1,36 @@
-//! This is the parser and interpreter for the 'Foo' language. See `tutorial.md` in the repository's root to learn
-//! about it.
+//! This is the parser and interpreter for the 'Foo' language.
+//!
+//! See the tutorial in the guide to learn more about it: https://docs.rs/chumsky/latest/chumsky/guide/index.html
+
 use chumsky::prelude::*;
 
 #[derive(Debug)]
-enum Expr<'a> {
+enum Expr<'src> {
     Num(f64),
-    Var(&'a str),
+    Var(&'src str),
 
-    Neg(Box<Expr<'a>>),
-    Add(Box<Expr<'a>>, Box<Expr<'a>>),
-    Sub(Box<Expr<'a>>, Box<Expr<'a>>),
-    Mul(Box<Expr<'a>>, Box<Expr<'a>>),
-    Div(Box<Expr<'a>>, Box<Expr<'a>>),
+    Neg(Box<Expr<'src>>),
+    Add(Box<Expr<'src>>, Box<Expr<'src>>),
+    Sub(Box<Expr<'src>>, Box<Expr<'src>>),
+    Mul(Box<Expr<'src>>, Box<Expr<'src>>),
+    Div(Box<Expr<'src>>, Box<Expr<'src>>),
 
-    Call(&'a str, Vec<Expr<'a>>),
+    Call(&'src str, Vec<Expr<'src>>),
     Let {
-        name: &'a str,
-        rhs: Box<Expr<'a>>,
-        then: Box<Expr<'a>>,
+        name: &'src str,
+        rhs: Box<Expr<'src>>,
+        then: Box<Expr<'src>>,
     },
     Fn {
-        name: &'a str,
-        args: Vec<&'a str>,
-        body: Box<Expr<'a>>,
-        then: Box<Expr<'a>>,
+        name: &'src str,
+        args: Vec<&'src str>,
+        body: Box<Expr<'src>>,
+        then: Box<Expr<'src>>,
     },
 }
 
 #[allow(clippy::let_and_return)]
-fn parser<'a>() -> impl Parser<'a, &'a str, Expr<'a>> {
+fn parser<'src>() -> impl Parser<'src, &'src str, Expr<'src>> {
     let ident = text::ascii::ident().padded();
 
     let expr = recursive(|expr| {
@@ -112,10 +114,10 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Expr<'a>> {
     decl
 }
 
-fn eval<'a>(
-    expr: &'a Expr<'a>,
-    vars: &mut Vec<(&'a str, f64)>,
-    funcs: &mut Vec<(&'a str, &'a [&'a str], &'a Expr<'a>)>,
+fn eval<'src>(
+    expr: &'src Expr<'src>,
+    vars: &mut Vec<(&'src str, f64)>,
+    funcs: &mut Vec<(&'src str, &'src [&'src str], &'src Expr<'src>)>,
 ) -> Result<f64, String> {
     match expr {
         Expr::Num(x) => Ok(*x),
@@ -128,7 +130,7 @@ fn eval<'a>(
             if let Some((_, val)) = vars.iter().rev().find(|(var, _)| var == name) {
                 Ok(*val)
             } else {
-                Err(format!("Cannot find variable `{}` in scope", name))
+                Err(format!("Cannot find variable `{name}` in scope"))
             }
         }
         Expr::Let { name, rhs, then } => {
@@ -156,14 +158,13 @@ fn eval<'a>(
                     output
                 } else {
                     Err(format!(
-                        "Wrong number of arguments for function `{}`: expected {}, found {}",
-                        name,
+                        "Wrong number of arguments for function `{name}`: expected {}, found {}",
                         arg_names.len(),
                         args.len(),
                     ))
                 }
             } else {
-                Err(format!("Cannot find function `{}` in scope", name))
+                Err(format!("Cannot find function `{name}` in scope"))
             }
         }
         Expr::Fn {
@@ -186,11 +187,11 @@ fn main() {
 
     match parser().parse(&src).into_result() {
         Ok(ast) => match eval(&ast, &mut Vec::new(), &mut Vec::new()) {
-            Ok(output) => println!("{}", output),
-            Err(eval_err) => println!("Evaluation error: {}", eval_err),
+            Ok(output) => println!("{output}"),
+            Err(eval_err) => println!("Evaluation error: {eval_err}"),
         },
         Err(parse_errs) => parse_errs
             .into_iter()
-            .for_each(|e| println!("Parse error: {}", e)),
+            .for_each(|err| println!("Parse error: {err}")),
     };
 }

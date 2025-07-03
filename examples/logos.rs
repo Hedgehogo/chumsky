@@ -38,7 +38,7 @@ enum Token<'a> {
 impl fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Float(s) => write!(f, "{}", s),
+            Self::Float(s) => write!(f, "{s}"),
             Self::Add => write!(f, "+"),
             Self::Sub => write!(f, "-"),
             Self::Mul => write!(f, "*"),
@@ -71,9 +71,10 @@ enum SExpr {
 //     - Has an input type of type `I`, the one we declared as a type parameter
 //     - Produces an `SExpr` as its output
 //     - Uses `Rich`, a built-in error type provided by chumsky, for error generation
-fn parser<'a, I>() -> impl Parser<'a, I, SExpr, extra::Err<Rich<'a, Token<'a>>>>
+fn parser<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, SExpr, extra::Err<Rich<'tokens, Token<'src>>>>
 where
-    I: ValueInput<'a, Token = Token<'a>, Span = SimpleSpan>,
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     recursive(|sexpr| {
         let atom = select! {
@@ -148,19 +149,20 @@ fn main() {
     match parser().parse(token_stream).into_result() {
         // If parsing was successful, attempt to evaluate the s-expression
         Ok(sexpr) => match sexpr.eval() {
-            Ok(out) => println!("Result = {}", out),
-            Err(err) => println!("Runtime error: {}", err),
+            Ok(out) => println!("Result = {out}"),
+            Err(err) => println!("Runtime error: {err}"),
         },
         // If parsing was unsuccessful, generate a nice user-friendly diagnostic with ariadne. You could also use
         // codespan, or whatever other diagnostic library you care about. You could even just display-print the errors
         // with Rust's built-in `Display` trait, but it's a little crude
         Err(errs) => {
             for err in errs {
-                Report::build(ReportKind::Error, (), err.span().start)
+                Report::build(ReportKind::Error, ((), err.span().into_range()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
                     .with_code(3)
                     .with_message(err.to_string())
                     .with_label(
-                        Label::new(err.span().into_range())
+                        Label::new(((), err.span().into_range()))
                             .with_message(err.reason().to_string())
                             .with_color(Color::Red),
                     )
