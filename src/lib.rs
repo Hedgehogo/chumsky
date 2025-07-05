@@ -3902,6 +3902,27 @@ mod tests {
     }
 
     #[test]
+    fn rewind() {
+        use crate::{DefaultExpected, LabelError};
+
+        let parser = group((just("a"), any(), just("b").or_not()))
+            .rewind()
+            .then(just::<_, _, extra::Err<Rich<_>>>("ac"));
+
+        assert_eq!(
+            parser.parse("ad").into_output_errors(),
+            (
+                None,
+                vec![LabelError::<&str, _>::expected_found(
+                    [DefaultExpected::Token('c'.into())],
+                    Some('d'.into()),
+                    SimpleSpan::new((), 1..2)
+                )]
+            )
+        )
+    }
+
+    #[test]
     fn separated_by() {
         use crate::{error::Simple, extra};
 
