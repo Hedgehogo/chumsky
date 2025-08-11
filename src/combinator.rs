@@ -2459,12 +2459,12 @@ where
             Ok(out) => {
                 // A succeeded -- go back to the beginning and try B
                 let after = inp.save();
-                inp.rewind(before);
+                inp.rewind_input(before);
 
                 match self.parser_b.go::<Check>(inp) {
                     Ok(()) => {
                         // B succeeded -- go to the end of A and return its output
-                        inp.rewind(after);
+                        inp.rewind_input(after);
                         Ok(out)
                     }
                     Err(()) => {
@@ -2785,7 +2785,7 @@ where
                     inp.add_alt_err(&new_alt.pos, new_alt.err);
                 }
             }
-            inp.rewind(before);
+            inp.rewind_input(before);
         } else {
             // Can't fail!
             let new_alt = new_alt.unwrap();

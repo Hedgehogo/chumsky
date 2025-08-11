@@ -3840,11 +3840,11 @@ mod tests {
         use crate::{DefaultExpected, LabelError};
 
         let parser = group((
-                just("a").or_not(),
-                just("b").try_map(|_, _| Ok(())).or_not(),
-                just::<_, &str, extra::Err<Rich<_>>>("c"),
-            ))
-            .ignored();
+            just("a").or_not(),
+            just("b").try_map(|_, _| Ok(())).or_not(),
+            just::<_, &str, extra::Err<Rich<_>>>("c"),
+        ))
+        .ignored();
 
         assert_eq!(
             parser.parse("").into_output_errors(),
@@ -3932,13 +3932,12 @@ mod tests {
 
         assert_eq!(parser.parse("bba").into_result(), Ok(()));
     }
-    
+
     #[test]
     fn zst_error() {
         use crate::newline;
 
-        fn filter_ok<'src>() -> impl Parser<'src, &'src str, ()>
-        {
+        fn filter_ok<'src>() -> impl Parser<'src, &'src str, ()> {
             any()
                 .filter(|_| true)
                 .map_err(|err: EmptyErr| err)
@@ -3957,7 +3956,7 @@ mod tests {
                     let cursor: usize = cursor.clone();
                     result.map(|_| cursor)
                 });
-        
+
                 let start_cursor = i.cursor();
                 let start: &usize = start_cursor.inner();
                 let start: usize = start.clone();
@@ -3973,7 +3972,7 @@ mod tests {
                 })
             })
         }
-        
+
         assert_eq!(custom_err().parse("n").into_output(), None);
     }
 
@@ -4040,6 +4039,24 @@ mod tests {
         );
         LabelError::<&str, _>::label_with(&mut err, "label");
         assert_eq!(parser.parse("b").into_output_errors(), (None, vec![err]));
+    }
+
+    #[test]
+    fn state_rewind() {
+        use crate::{extra::Full, inspector::TruncateState};
+
+        let parser = any::<_, Full<EmptyErr, TruncateState<char>, ()>>()
+            .map_with(|out, extra| {
+                extra.state().0.push(out);
+                extra.state().0.len() - 1
+            })
+            .rewind()
+            .then_ignore(any());
+
+        let mut state = TruncateState::default();
+        let res = parser.parse_with_state("a", &mut state).unwrap();
+        assert_eq!(res, 0);
+        assert_eq!(state.0.as_slice(), ['a']);
     }
 
     /*
