@@ -1207,7 +1207,7 @@ impl<'src, I: Input<'src>> PartialEq for Cursor<'src, '_, I> {
 
 impl<'src, I: Input<'src>> PartialOrd for Cursor<'src, '_, I> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(I::cursor_location(&self.inner).cmp(&I::cursor_location(&other.inner)))
+        Some(self.cmp(other))
     }
 }
 
@@ -1799,10 +1799,9 @@ impl<'src, 'parse, I: Input<'src>, E: ParserExtra<'src, I>> InputRef<'src, 'pars
 
     #[inline]
     pub(crate) fn add_alt_err(&mut self, at: &I::Cursor, err: E::Error) {
+        // Fast path: if the error doesn't carry meaningful information, avoid unnecessary decision-making!
         if core::mem::size_of::<E::Error>() == 0 {
-            if self.errors.alt.is_none() {
-                self.errors.alt = Some(Located::at(at.clone(), err))
-            }
+            self.errors.alt = Some(Located::at(self.cursor.clone(), err));
             return;
         }
 

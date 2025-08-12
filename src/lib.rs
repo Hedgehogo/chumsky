@@ -75,7 +75,8 @@ pub mod prelude {
         extra,
         input::Input,
         primitive::{
-            any, any_ref, choice, custom, empty, end, group, just, map_ctx, none_of, one_of, todo,
+            any, any_ref, choice, custom, empty, end, group, just, map_ctx, none_of, one_of, set,
+            todo,
         },
         recovery::{nested_delimiters, skip_then_retry_until, skip_until, via_parser},
         recursive::{recursive, Recursive},
@@ -4096,4 +4097,17 @@ mod tests {
         );
     }
     */
+
+    // Prevent a regression
+    #[test]
+    fn labelled_recovery_dont_panic() {
+        fn parser<'i>() -> impl Parser<'i, &'i str, SimpleSpan> {
+            choice((choice((just("true"), just("false")))
+                .labelled("boolean")
+                .to_span(),))
+            .recover_with(via_parser(any().and_is(text::newline().not()).to_span()))
+        }
+
+        let _ = parser().parse("tru");
+    }
 }
